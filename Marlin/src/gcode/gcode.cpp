@@ -1039,6 +1039,10 @@ void GcodeSuite::process_parsed_command(const bool no_ok/*=false*/) {
         case 869: M869(); break;                                  // M869: Report axis error
       #endif
 
+      #ifdef FXDTICTRL
+        case 950: M950(); break;
+      #endif
+      
       #if ENABLED(MAGNETIC_PARKING_EXTRUDER)
         case 951: M951(); break;                                  // M951: Set Magnetic Parking Extruder parameters
       #endif

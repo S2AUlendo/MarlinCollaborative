@@ -69,6 +69,9 @@
 #include "stepper.h"
 #include "motion.h"
 #include "temperature.h"
+#ifdef FXDTICTRL
+  #include "fixed_time_ctrl.h"
+#endif
 #include "../lcd/marlinui.h"
 #include "../gcode/parser.h"
 
@@ -224,6 +227,10 @@ float Planner::previous_nominal_speed;
   int8_t Planner::xy_freq_limit_hz = XY_FREQUENCY_LIMIT;
   float Planner::xy_freq_min_speed_factor = (XY_FREQUENCY_MIN_PERCENT) * 0.01f;
   int32_t Planner::xy_freq_min_interval_us = LROUND(1000000.0f / (XY_FREQUENCY_LIMIT));
+#endif
+
+#ifdef FXDTICTRL
+  bool Planner::fxdTiCtrl_busy = false;
 #endif
 
 #if ENABLED(LIN_ADVANCE)
@@ -1685,7 +1692,12 @@ void Planner::quick_stop() {
 
   // Restart the block delay for the first movement - As the queue was
   // forced to empty, there's no risk the ISR will touch this.
-  delay_before_delivering = BLOCK_DELAY_FOR_1ST_MOVE;
+  
+  #ifdef FXDTICTRL
+    delay_before_delivering = (fxdTiCtrl.cfg_mode) ? 0U : BLOCK_DELAY_FOR_1ST_MOVE;
+  #else
+    delay_before_delivering = BLOCK_DELAY_FOR_1ST_MOVE;
+  #endif
 
   TERN_(HAS_WIRED_LCD, clear_block_buffer_runtime()); // Clear the accumulated runtime
 
@@ -1836,7 +1848,11 @@ bool Planner::_buffer_steps(const xyze_long_t &target
     // As there are no queued movements, the Stepper ISR will not touch this
     // variable, so there is no risk setting this here (but it MUST be done
     // before the following line!!)
-    delay_before_delivering = BLOCK_DELAY_FOR_1ST_MOVE;
+    #ifdef FXDTICTRL
+      delay_before_delivering = (fxdTiCtrl.cfg_mode) ? 0U : BLOCK_DELAY_FOR_1ST_MOVE;
+    #else
+      delay_before_delivering = BLOCK_DELAY_FOR_1ST_MOVE;
+    #endif
   }
 
   // Move buffer head
@@ -2977,7 +2993,11 @@ void Planner::buffer_sync_block(const BlockFlagBit sync_flag/*=BLOCK_BIT_SYNC_PO
     // As there are no queued movements, the Stepper ISR will not touch this
     // variable, so there is no risk setting this here (but it MUST be done
     // before the following line!!)
-    delay_before_delivering = BLOCK_DELAY_FOR_1ST_MOVE;
+    #ifdef FXDTICTRL
+      delay_before_delivering = (fxdTiCtrl.cfg_mode) ? 0U : BLOCK_DELAY_FOR_1ST_MOVE;
+    #else
+      delay_before_delivering = BLOCK_DELAY_FOR_1ST_MOVE;
+    #endif
   }
 
   block_buffer_head = next_buffer_head;
@@ -3226,7 +3246,11 @@ bool Planner::buffer_line(const xyze_pos_t &cart, const_feedRate_t fr_mm_s
       // As there are no queued movements, the Stepper ISR will not touch this
       // variable, so there is no risk setting this here (but it MUST be done
       // before the following line!!)
-      delay_before_delivering = BLOCK_DELAY_FOR_1ST_MOVE;
+      #ifdef FXDTICTRL
+        delay_before_delivering = (fxdTiCtrl.cfg_mode) ? 0U : BLOCK_DELAY_FOR_1ST_MOVE;
+      #else
+        delay_before_delivering = BLOCK_DELAY_FOR_1ST_MOVE;
+      #endif
     }
 
     // Move buffer head

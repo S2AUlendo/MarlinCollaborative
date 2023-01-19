@@ -353,14 +353,14 @@ class Stepper {
       static bool frozen;                   // Set this flag to instantly freeze motion
     #endif
 
+    static bool abort_current_block;        // Signals to the stepper that current block should be aborted
+
   private:
 
     static block_t* current_block;          // A pointer to the block currently being traced
 
     static axis_bits_t last_direction_bits, // The next stepping-bits to be output
                        axis_did_move;       // Last Movement in the given direction is not null, as computed when the last movement was fetched from planner
-
-    static bool abort_current_block;        // Signals to the stepper that current block should be aborted
 
     #if ENABLED(X_DUAL_ENDSTOPS)
       static bool locked_X_motor, locked_X2_motor;
@@ -446,6 +446,10 @@ class Stepper {
 
     // Current stepper motor directions (+1 or -1)
     static xyze_int8_t count_direction;
+
+    #ifdef FXDTICTRL
+      static uint32_t fxdTiCtrl_cmdSkipCnt;
+    #endif
 
   public:
     // Initialize stepper hardware
@@ -627,6 +631,10 @@ class Stepper {
       set_directions();
     }
 
+    #ifdef FXDTICTRL
+      static void fxdTiCtrl_BlockQueueUpdate(); // Manages the planner.
+    #endif
+
   private:
 
     // Set the current position in steps
@@ -647,6 +655,11 @@ class Stepper {
 
     #if HAS_MICROSTEPS
       static void microstep_init();
+    #endif
+
+    #ifdef FXDTICTRL
+      static void fxdTiCtrl_stepper(bool applyDir, uint8_t command);
+      static void fxdTiCtrl_refreshAxisDidMove();
     #endif
 
 };

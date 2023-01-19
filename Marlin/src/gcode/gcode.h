@@ -1186,6 +1186,10 @@ private:
     static void M928();
   #endif
 
+  #ifdef FXDTICTRL
+    static void M950();
+  #endif
+  
   #if ENABLED(MAGNETIC_PARKING_EXTRUDER)
     static void M951();
   #endif

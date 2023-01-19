@@ -498,6 +498,10 @@ class Planner {
         refresh_frequency_limit();
       }
     #endif
+  
+    #ifdef FXDTICTRL
+      static bool fxdTiCtrl_busy;
+    #endif
 
   private:
 
@@ -931,9 +935,16 @@ class Planner {
 
     // Blocks are queued, or we're running out moves, or the closed loop controller is waiting
     static bool busy() {
-      return (has_blocks_queued() || cleaning_buffer_counter
-          || TERN0(EXTERNAL_CLOSED_LOOP_CONTROLLER, CLOSED_LOOP_WAITING())
-      );
+      #ifdef FXDTICTRL
+        return (has_blocks_queued() || cleaning_buffer_counter
+            || TERN0(EXTERNAL_CLOSED_LOOP_CONTROLLER, CLOSED_LOOP_WAITING())
+            || fxdTiCtrl_busy
+        );
+      #else
+        return (has_blocks_queued() || cleaning_buffer_counter
+              || TERN0(EXTERNAL_CLOSED_LOOP_CONTROLLER, CLOSED_LOOP_WAITING())
+          );
+      #endif
     }
 
     // Block until all buffered steps are executed / cleaned

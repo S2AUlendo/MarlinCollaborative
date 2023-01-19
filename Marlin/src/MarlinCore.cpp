@@ -46,6 +46,9 @@
 #include "module/settings.h"
 #include "module/stepper.h"
 #include "module/temperature.h"
+#ifdef FXDTICTRL
+  #include "module/fixed_time_ctrl.h"
+#endif
 
 #include "gcode/gcode.h"
 #include "gcode/parser.h"
@@ -881,6 +884,11 @@ void idle(bool no_stepper_sleep/*=false*/) {
 
   IDLE_DONE:
   TERN_(MARLIN_DEV_MODE, idle_depth--);
+
+  #ifdef FXDTICTRL
+    fxdTiCtrl.loop();
+  #endif
+  
   return;
 }
 

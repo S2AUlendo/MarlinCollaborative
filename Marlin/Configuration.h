@@ -3333,3 +3333,21 @@
 
 // Disable servo with M282 to reduce power consumption, noise, and heat when not in use
 //#define SERVO_DETACH_GCODE
+
+
+// Enabling of the fixed-time-based control logic.
+#define FXDTICTRL // Master toggle for enabling the changes.
+// Configurations of the fixed-time-based control.
+// Defaults may be set to avoid setting configurations by G-code.
+#ifdef FXDTICTRL
+  #define FXDTICTRL_DEFAULT_MODE fxdTiCtrlMode_t_ENABLED        // Default mode of fixed time control. Choose from
+                                                                // enumeration in .\src\module\fixed_time_ctrl.h.
+  #define FXDTICTRL_DEFAULT_DYNFREQ_MODE dynFreqMode_t_DISABLED // Default mode of dynamic frequency calculation. Choose
+                                                                // from enumeration in .\src\module\fixed_time_ctrl.h.
+  #define FXDTICTRL_SHAPING_DEFAULT_X_FREQ 37.0f                // Default peak frequency used by input shapers.
+  #define FXDTICTRL_SHAPING_DEFAULT_Y_FREQ 37.0f                // Default peak frequency used by input shapers.
+  #define FXDTICTRL_LINEAR_ADV_DEFAULT_ENA false                // Default linear advance enable (true) or disable (false).
+  #define FXDTICTRL_LINEAR_ADV_DEFAULT_K 0.0f                   // Default linear advance gain.
+  #define FXDTICTRL_SHAPING_ZETA 0.1f                           // Zeta used by input shapers.
+  #define FXDTICTRL_SHAPING_V_TOL 0.05f                         // Vibration tolerance used by EI input shapers.
+#endif
