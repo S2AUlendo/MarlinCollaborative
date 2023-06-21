@@ -28,7 +28,7 @@
 #include "../../module/temperature.h"
 
 #if ENABLED(DWIN_LCD_PROUI)
-  #include "../../lcd/e3v2/proui/dwin_defines.h"
+  #include "../../lcd/e3v2/proui/dwin.h"
 #endif
 
 /**
@@ -59,9 +59,7 @@ void GcodeSuite::M302() {
   else if (!seen_S) {
     // Report current state
     SERIAL_ECHO_START();
-    SERIAL_ECHOPGM("Cold extrudes are ");
-    SERIAL_ECHOF(thermalManager.allow_cold_extrude ? F("en") : F("dis"));
-    SERIAL_ECHOLNPGM("abled (min temp ", thermalManager.extrude_min_temp, "C)");
+    SERIAL_ECHOLN(F("Cold extrudes are "), thermalManager.allow_cold_extrude ? F("en") : F("dis"), F("abled (min temp "), thermalManager.extrude_min_temp, F("C)"));
   }
 }
 

@@ -23,23 +23,33 @@
 /**
  * Bed Level Tools for Pro UI
  * Extended by: Miguel A. Risco-Castillo (MRISCOC)
- * Version: 2.0.0
- * Date: 2022/05/23
+ * Version: 2.1.0
+ * Date: 2022/08/27
  *
  * Based on the original work of: Henri-J-Norden
  * https://github.com/Jyers/Marlin/pull/126
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  */
 
 #include "../../../inc/MarlinConfigPre.h"
-#include "bedlevel_tools.h"
 
-#if BOTH(DWIN_LCD_PROUI, HAS_LEVELING)
+#if ALL(DWIN_LCD_PROUI, HAS_LEVELING)
 
 #include "../../marlinui.h"
 #include "../../../core/types.h"
-#include "dwin.h"
-#include "dwinui.h"
-#include "dwin_popup.h"
 #include "../../../feature/bedlevel/bedlevel.h"
 #include "../../../module/probe.h"
 #include "../../../gcode/gcode.h"
@@ -48,9 +58,14 @@
 #include "../../../libs/least_squares_fit.h"
 #include "../../../libs/vector_3.h"
 
-BedLevelToolsClass BedLevelTools;
+#include "dwin.h"
+#include "dwinui.h"
+#include "dwin_popup.h"
+#include "bedlevel_tools.h"
 
-#if USE_UBL_VIEWER
+BedLevelToolsClass bedLevelTools;
+
+#if ENABLED(USE_UBL_VIEWER)
   bool BedLevelToolsClass::viewer_asymmetric_range = false;
   bool BedLevelToolsClass::viewer_print_value = false;
 #endif
@@ -89,29 +104,17 @@ char cmd[MAX_CMD_SIZE+16], str_1[16], str_2[16], str_3[16];
 
     matrix_3x3 rotation = matrix_3x3::create_look_at(vector_3(lsf_results.A, lsf_results.B, 1));
     GRID_LOOP(i, j) {
-      float mx = bedlevel.get_mesh_x(i),
-            my = bedlevel.get_mesh_y(j),
-            mz = bedlevel.z_values[i][j];
+      float mx = bedlevel.get_mesh_x(i), my = bedlevel.get_mesh_y(j), mz = bedlevel.z_values[i][j];
 
       if (DEBUGGING(LEVELING)) {
-        DEBUG_ECHOPAIR_F("before rotation = [", mx, 7);
-        DEBUG_CHAR(',');
-        DEBUG_ECHO_F(my, 7);
-        DEBUG_CHAR(',');
-        DEBUG_ECHO_F(mz, 7);
-        DEBUG_ECHOPGM("]   ---> ");
+        DEBUG_ECHOLN(F("before rotation = ["), p_float_t(mx, 7), AS_CHAR(','), p_float_t(my, 7), AS_CHAR(','), p_float_t(mz, 7), F("]   ---> "));
         DEBUG_DELAY(20);
       }
 
       rotation.apply_rotation_xyz(mx, my, mz);
 
       if (DEBUGGING(LEVELING)) {
-        DEBUG_ECHOPAIR_F("after rotation = [", mx, 7);
-        DEBUG_CHAR(',');
-        DEBUG_ECHO_F(my, 7);
-        DEBUG_CHAR(',');
-        DEBUG_ECHO_F(mz, 7);
-        DEBUG_ECHOLNPGM("]");
+        DEBUG_ECHOLN(F("after rotation = ["), p_float_t(mx, 7), AS_CHAR(','), p_float_t(my, 7), AS_CHAR(','), p_float_t(mz, 7), F("]   ---> "));
         DEBUG_DELAY(20);
       }
 
@@ -153,26 +156,30 @@ void BedLevelToolsClass::manual_move(const uint8_t mesh_x, const uint8_t mesh_y,
   }
 }
 
+// Move / Probe methods. As examples, not yet used.
 void BedLevelToolsClass::MoveToXYZ() {
-  BedLevelTools.goto_mesh_value = true;
-  BedLevelTools.manual_move(BedLevelTools.mesh_x, BedLevelTools.mesh_y, false);
+  bedLevelTools.goto_mesh_value = true;
+  bedLevelTools.manual_move(bedLevelTools.mesh_x, bedLevelTools.mesh_y, false);
 }
 void BedLevelToolsClass::MoveToXY() {
-  BedLevelTools.goto_mesh_value = false;
-  BedLevelTools.manual_move(BedLevelTools.mesh_x, BedLevelTools.mesh_y, false);
+  bedLevelTools.goto_mesh_value = false;
+  bedLevelTools.manual_move(bedLevelTools.mesh_x, bedLevelTools.mesh_y, false);
 }
 void BedLevelToolsClass::MoveToZ() {
-  BedLevelTools.goto_mesh_value = true;
-  BedLevelTools.manual_move(BedLevelTools.mesh_x, BedLevelTools.mesh_y, true);
+  bedLevelTools.goto_mesh_value = true;
+  bedLevelTools.manual_move(bedLevelTools.mesh_x, bedLevelTools.mesh_y, true);
 }
 void BedLevelToolsClass::ProbeXY() {
-  sprintf_P(cmd, PSTR("G30X%sY%s"),
-    dtostrf(bedlevel.get_mesh_x(BedLevelTools.mesh_x), 1, 2, str_1),
-    dtostrf(bedlevel.get_mesh_y(BedLevelTools.mesh_y), 1, 2, str_2)
+  const uint16_t Clear = Z_CLEARANCE_DEPLOY_PROBE;
+  sprintf_P(cmd, PSTR("G28O\nG0Z%i\nG30X%sY%s"),
+    Clear,
+    dtostrf(bedlevel.get_mesh_x(bedLevelTools.mesh_x), 1, 2, str_1),
+    dtostrf(bedlevel.get_mesh_y(bedLevelTools.mesh_y), 1, 2, str_2)
   );
   gcode.process_subcommands_now(cmd);
 }
 
+// Accessors
 float BedLevelToolsClass::get_max_value() {
   float max = __FLT_MAX__ * -1;
   GRID_LOOP(x, y) {
@@ -191,18 +198,16 @@ float BedLevelToolsClass::get_min_value() {
   return min;
 }
 
+// Return 'true' if mesh is good and within LCD limits
 bool BedLevelToolsClass::meshvalidate() {
-  float min = __FLT_MAX__, max = __FLT_MAX__ * -1;
-
   GRID_LOOP(x, y) {
-    if (isnan(bedlevel.z_values[x][y])) return false;
-    if (bedlevel.z_values[x][y] < min) min = bedlevel.z_values[x][y];
-    if (bedlevel.z_values[x][y] > max) max = bedlevel.z_values[x][y];
+    const float v = bedlevel.z_values[x][y];
+    if (isnan(v) || !WITHIN(v, UBL_Z_OFFSET_MIN, UBL_Z_OFFSET_MAX)) return false;
   }
-  return WITHIN(max, MESH_Z_OFFSET_MIN, MESH_Z_OFFSET_MAX);
+  return true;
 }
 
-#if USE_UBL_VIEWER
+#if ENABLED(USE_UBL_VIEWER)
 
   void BedLevelToolsClass::Draw_Bed_Mesh(int16_t selected /*= -1*/, uint8_t gridline_width /*= 1*/, uint16_t padding_x /*= 8*/, uint16_t padding_y_top /*= 40 + 53 - 7*/) {
     drawing_mesh = true;
@@ -212,13 +217,13 @@ bool BedLevelToolsClass::meshvalidate() {
     const float v_max = abs(get_max_value()), v_min = abs(get_min_value()), range = _MAX(v_min, v_max);
 
     // Clear background from previous selection and select new square
-    DWIN_Draw_Rectangle(1, Color_Bg_Black, _MAX(0, padding_x - gridline_width), _MAX(0, padding_y_top - gridline_width), padding_x + total_width_px, padding_y_top + total_width_px);
+    dwinDrawRectangle(1, Color_Bg_Black, _MAX(0, padding_x - gridline_width), _MAX(0, padding_y_top - gridline_width), padding_x + total_width_px, padding_y_top + total_width_px);
     if (selected >= 0) {
       const auto selected_y = selected / (GRID_MAX_POINTS_X);
       const auto selected_x = selected - (GRID_MAX_POINTS_X) * selected_y;
       const auto start_y_px = padding_y_top + selected_y * cell_height_px;
       const auto start_x_px = padding_x + selected_x * cell_width_px;
-      DWIN_Draw_Rectangle(1, Color_White, _MAX(0, start_x_px - gridline_width), _MAX(0, start_y_px - gridline_width), start_x_px + cell_width_px, start_y_px + cell_height_px);
+      dwinDrawRectangle(1, Color_White, _MAX(0, start_x_px - gridline_width), _MAX(0, start_y_px - gridline_width), start_x_px + cell_width_px, start_y_px + cell_height_px);
     }
 
     // Draw value square grid
@@ -228,7 +233,7 @@ bool BedLevelToolsClass::meshvalidate() {
       const auto end_x_px   = start_x_px + cell_width_px - 1 - gridline_width;
       const auto start_y_px = padding_y_top + ((GRID_MAX_POINTS_Y) - y - 1) * cell_height_px;
       const auto end_y_px   = start_y_px + cell_height_px - 1 - gridline_width;
-      DWIN_Draw_Rectangle(1,                                                                                 // RGB565 colors: http://www.barth-dev.de/online/rgb565-color-picker/
+      dwinDrawRectangle(1,                                                                                 // RGB565 colors: http://www.barth-dev.de/online/rgb565-color-picker/
         isnan(bedlevel.z_values[x][y]) ? Color_Grey : (                                                           // gray if undefined
           (bedlevel.z_values[x][y] < 0 ?
             (uint16_t)round(0x1F * -bedlevel.z_values[x][y] / (!viewer_asymmetric_range ? range : v_min)) << 11 : // red if mesh point value is negative
@@ -244,7 +249,7 @@ bool BedLevelToolsClass::meshvalidate() {
       if (viewer_print_value) {
         int8_t offset_x, offset_y = cell_height_px / 2 - 6;
         if (isnan(bedlevel.z_values[x][y])) {  // undefined
-          DWIN_Draw_String(false, font6x12, Color_White, Color_Bg_Blue, start_x_px + cell_width_px / 2 - 5, start_y_px + offset_y, F("X"));
+          dwinDrawString(false, font6x12, Color_White, Color_Bg_Blue, start_x_px + cell_width_px / 2 - 5, start_y_px + offset_y, F("X"));
         }
         else {                          // has value
           if (GRID_MAX_POINTS_X < 10)
@@ -253,8 +258,8 @@ bool BedLevelToolsClass::meshvalidate() {
             sprintf_P(buf, PSTR("%02i"), (uint16_t)(abs(bedlevel.z_values[x][y] - (int16_t)bedlevel.z_values[x][y]) * 100));
           offset_x = cell_width_px / 2 - 3 * (strlen(buf)) - 2;
           if (!(GRID_MAX_POINTS_X < 10))
-            DWIN_Draw_String(false, font6x12, Color_White, Color_Bg_Blue, start_x_px - 2 + offset_x, start_y_px + offset_y /*+ square / 2 - 6*/, F("."));
-          DWIN_Draw_String(false, font6x12, Color_White, Color_Bg_Blue, start_x_px + 1 + offset_x, start_y_px + offset_y /*+ square / 2 - 6*/, buf);
+            dwinDrawString(false, font6x12, Color_White, Color_Bg_Blue, start_x_px - 2 + offset_x, start_y_px + offset_y /*+ square / 2 - 6*/, F("."));
+          dwinDrawString(false, font6x12, Color_White, Color_Bg_Blue, start_x_px + 1 + offset_x, start_y_px + offset_y /*+ square / 2 - 6*/, buf);
         }
         safe_delay(10);
         LCD_SERIAL.flushTX();

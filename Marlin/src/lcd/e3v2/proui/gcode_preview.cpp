@@ -21,33 +21,15 @@
  */
 
 /**
- * DWIN g-code thumbnail preview
+ * DWIN G-code thumbnail preview
  * Author: Miguel A. Risco-Castillo
- * version: 2.1
- * Date: 2021/06/19
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as
- * published by the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
- *
- * For commercial applications additional licenses can be requested
+ * version: 3.1.2
+ * Date: 2022/09/03
  */
 
 #include "../../../inc/MarlinConfigPre.h"
-#if ENABLED(DWIN_LCD_PROUI)
 
-#include "dwin_defines.h"
-
-#if HAS_GCODE_PREVIEW
+#if ALL(DWIN_LCD_PROUI, HAS_GCODE_PREVIEW)
 
 #include "../../../core/types.h"
 #include "../../marlinui.h"
@@ -153,7 +135,7 @@ bool Has_Preview() {
       Get_Value(buf, ";MAXZ:", fileprop.height);
       fileprop.height -= tmp;
       posptr = strstr(buf, tbstart);
-      if (posptr != NULL) {
+      if (posptr != nullptr) {
         fileprop.thumbstart = indx + (posptr - &buf[0]);
       }
       else {
@@ -217,7 +199,7 @@ void Preview_DrawFromSD() {
     char str_1[6] = "";
     char str_2[6] = "";
     char str_3[6] = "";
-    DWIN_Draw_Rectangle(1, HMI_data.Background_Color, 0, 0, DWIN_WIDTH, STATUS_Y - 1);
+    dwinDrawRectangle(1, HMI_data.Background_Color, 0, 0, DWIN_WIDTH, STATUS_Y - 1);
     if (fileprop.time) {
       sprintf_P(buf, PSTR("Estimated time: %i:%02i"), (uint16_t)fileprop.time / 3600, ((uint16_t)fileprop.time % 3600) / 60);
       DWINUI::Draw_String(20, 10, buf);
@@ -236,14 +218,18 @@ void Preview_DrawFromSD() {
     }
     DWINUI::Draw_Button(BTN_Print, 26, 290);
     DWINUI::Draw_Button(BTN_Cancel, 146, 290);
-    DWIN_ICON_Show(0, 0, 1, 21, 90, 0x00);
+    dwinIconShow(0, 0, 1, 21, 90, 0x00);
     Draw_Select_Highlight(true, 290);
-    DWIN_UpdateLCD();
+    dwinUpdateLCD();
   }
   else {
-    HMI_flag.select_flag = 1;
+    hmiFlag.select_flag = 1;
     wait_for_user = false;
   }
+}
+
+void Preview_Invalidate() {
+  fileprop.thumbstart = 0;
 }
 
 bool Preview_Valid() {
@@ -254,5 +240,4 @@ void Preview_Reset() {
   fileprop.thumbsize = 0;
 }
 
-#endif // HAS_GCODE_PREVIEW
-#endif // DWIN_LCD_PROUI
+#endif // HAS_GCODE_PREVIEW && DWIN_LCD_PROUI
