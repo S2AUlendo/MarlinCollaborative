@@ -1479,10 +1479,6 @@ void Stepper::isr() {
   uint8_t max_loops = 10;
 
   #if ENABLED(FT_MOTION)
-    static bool fxdTiCtrl_stepCmdRdy = false;   // Indicates a step command was loaded from the
-                                                // buffers and is ready to be output.
-    static bool fxdTiCtrl_applyDir = false;     // Indicates the DIR output should be set.
-    static ft_command_t fxdTiCtrl_stepCmd = 0U; // Storage for the step command to be output.
     static uint32_t fxdTiCtrl_nextAuxISR = 0U;  // Storage for the next ISR of the auxilliary tasks.
   #endif
 
@@ -1496,43 +1492,12 @@ void Stepper::isr() {
 
     #if ENABLED(FT_MOTION)
 
-      // NOTE STEPPER_TIMER_RATE is equal to 2000000, not what VSCode shows
       const bool using_fxtictrl = fxdTiCtrl.cfg.mode;
       if (using_fxtictrl) {
         if (!nextMainISR) {
-          if (abort_current_block) {
-            fxdTiCtrl_stepCmdRdy = false; // If a command was ready, cancel it.
-            fxdTiCtrl.sts_stepperBusy = false; // Set busy false to allow a reset.
-            nextMainISR = 0.01f * (STEPPER_TIMER_RATE); // Come back in 10 msec.
-          }
-          else { // !(abort_current_block)
-            if (fxdTiCtrl_stepCmdRdy) {
-              fxdTiCtrl_stepper(fxdTiCtrl_applyDir, fxdTiCtrl_stepCmd);
-              fxdTiCtrl_stepCmdRdy = false;
-            }
-            // Check if there is data in the buffers.
-            if (fxdTiCtrl.stepperCmdBuff_produceIdx != fxdTiCtrl.stepperCmdBuff_consumeIdx) {
-
-              fxdTiCtrl.sts_stepperBusy = true;
-
-              // "Pop" one command from the command buffer.
-              fxdTiCtrl_stepCmd = fxdTiCtrl.stepperCmdBuff[fxdTiCtrl.stepperCmdBuff_consumeIdx];
-              const uint8_t dir_index = fxdTiCtrl.stepperCmdBuff_consumeIdx >> 3,
-                            dir_bit = fxdTiCtrl.stepperCmdBuff_consumeIdx & 0x7;
-              fxdTiCtrl_applyDir = TEST(fxdTiCtrl.stepperCmdBuff_ApplyDir[dir_index], dir_bit);
-              nextMainISR = fxdTiCtrl.stepperCmdBuff_StepRelativeTi[fxdTiCtrl.stepperCmdBuff_consumeIdx];
-              fxdTiCtrl_stepCmdRdy = true;
-
-              if (++fxdTiCtrl.stepperCmdBuff_consumeIdx == (FTM_STEPPERCMD_BUFF_SIZE))
-                fxdTiCtrl.stepperCmdBuff_consumeIdx = 0;
-
-            }
-            else { // Buffer empty.
-              fxdTiCtrl.sts_stepperBusy = false;
-              nextMainISR = 0.01f * (STEPPER_TIMER_RATE); // Come back in 10 msec.
-            }
-          } // !(abort_current_block)
-        } // if (!nextMainISR)
+          nextMainISR = (STEPPER_TIMER_RATE/FTM_STEPPER_FS);
+          fxdTiCtrl_stepper();
+        }
 
         // Define 2.5 msec task for auxilliary functions.
         if (!fxdTiCtrl_nextAuxISR) {
@@ -3407,43 +3372,55 @@ void Stepper::report_positions() {
 #if ENABLED(FT_MOTION)
 
   // Set stepper I/O for fixed time controller.
-  void Stepper::fxdTiCtrl_stepper(const bool applyDir, const ft_command_t command) {
+  void Stepper::fxdTiCtrl_stepper() {
 
-    USING_TIMED_PULSE();
+    // Check if the buffer is empty.
+    fxdTiCtrl.sts_stepperBusy = (fxdTiCtrl.stepperCmdBuff_produceIdx != fxdTiCtrl.stepperCmdBuff_consumeIdx);
 
-    #if HAS_Z_AXIS
-      // Z is handled differently to update the stepper
-      // counts (needed by Marlin for bed level probing).
-      const bool z_fwd = TEST(command, FT_BIT_DIR_Z),
-                z_step = TEST(command, FT_BIT_STEP_Z);
-    #endif
+    if (fxdTiCtrl.sts_stepperBusy) {
 
-    if (applyDir) {
-      TERN_(HAS_X_AXIS, X_APPLY_DIR(TEST(command, FT_BIT_DIR_X), false));
-      TERN_(HAS_Y_AXIS, Y_APPLY_DIR(TEST(command, FT_BIT_DIR_Y), false));
-      TERN_(HAS_Z_AXIS, Z_APPLY_DIR(z_fwd, false));
-      TERN_(HAS_EXTRUDERS, E_APPLY_DIR(TEST(command, FT_BIT_DIR_E), false));
-      DIR_WAIT_AFTER();
+      // "Pop" one command from current motion buffer            
+      // Use one byte to restore one stepper command in the format:
+      // |X_step|X_direction|Y_step|Y_direction|Z_step|Z_direction|E_step|E_direction|
+      ft_command_t command = fxdTiCtrl.stepperCmdBuff[fxdTiCtrl.stepperCmdBuff_consumeIdx++];
+      if (fxdTiCtrl.stepperCmdBuff_consumeIdx == FTM_STEPPERCMD_BUFF_SIZE) { fxdTiCtrl.stepperCmdBuff_consumeIdx = 0U; }
+
+      if (!abort_current_block){
+        USING_TIMED_PULSE();
+
+        #if HAS_Z_AXIS
+          // Z is handled differently to update the stepper
+          // counts (needed by Marlin for bed level probing).
+          const bool z_fwd = TEST(command, FT_BIT_DIR_Z),
+                    z_step = TEST(command, FT_BIT_STEP_Z);
+        #endif
+
+        TERN_(HAS_X_AXIS, X_APPLY_DIR(TEST(command, FT_BIT_DIR_X), false));
+        TERN_(HAS_Y_AXIS, Y_APPLY_DIR(TEST(command, FT_BIT_DIR_Y), false));
+        TERN_(HAS_Z_AXIS, Z_APPLY_DIR(z_fwd, false));
+        TERN_(HAS_EXTRUDERS, E_APPLY_DIR(TEST(command, FT_BIT_DIR_E), false));
+        DIR_WAIT_AFTER();
+
+        TERN_(HAS_X_AXIS, X_APPLY_STEP(TEST(command, FT_BIT_STEP_X), false));
+        TERN_(HAS_Y_AXIS, Y_APPLY_STEP(TEST(command, FT_BIT_STEP_Y), false));
+        TERN_(HAS_Z_AXIS, Z_APPLY_STEP(z_step, false));
+        TERN_(HAS_EXTRUDERS, E_APPLY_STEP(TEST(command, FT_BIT_STEP_E), false));
+
+        START_TIMED_PULSE();
+
+        #if HAS_Z_AXIS
+          // Update step counts
+          if (z_step) count_position.z += z_fwd ? 1 : -1;
+        #endif
+
+        AWAIT_HIGH_PULSE();
+
+        TERN_(HAS_X_AXIS, X_APPLY_STEP(0, false));
+        TERN_(HAS_Y_AXIS, Y_APPLY_STEP(0, false));
+        TERN_(HAS_Z_AXIS, Z_APPLY_STEP(0, false));
+        TERN_(HAS_EXTRUDERS, E_APPLY_STEP(0, false));
+      }
     }
-
-    TERN_(HAS_X_AXIS, X_APPLY_STEP(TEST(command, FT_BIT_STEP_X), false));
-    TERN_(HAS_Y_AXIS, Y_APPLY_STEP(TEST(command, FT_BIT_STEP_Y), false));
-    TERN_(HAS_Z_AXIS, Z_APPLY_STEP(z_step, false));
-    TERN_(HAS_EXTRUDERS, E_APPLY_STEP(TEST(command, FT_BIT_STEP_E), false));
-
-    START_TIMED_PULSE();
-
-    #if HAS_Z_AXIS
-      // Update step counts
-      if (z_step) count_position.z += z_fwd ? 1 : -1;
-    #endif
-
-    AWAIT_HIGH_PULSE();
-
-    TERN_(HAS_X_AXIS, X_APPLY_STEP(0, false));
-    TERN_(HAS_Y_AXIS, Y_APPLY_STEP(0, false));
-    TERN_(HAS_Z_AXIS, Z_APPLY_STEP(0, false));
-    TERN_(HAS_EXTRUDERS, E_APPLY_STEP(0, false));
 
   } // Stepper::fxdTiCtrl_stepper
 

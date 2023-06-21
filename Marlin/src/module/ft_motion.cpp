@@ -52,8 +52,6 @@ FxdTiCtrl fxdTiCtrl;
 
 ft_config_t FxdTiCtrl::cfg;
 ft_command_t FxdTiCtrl::stepperCmdBuff[FTM_STEPPERCMD_BUFF_SIZE] = {0U};                // Buffer of stepper commands.
-hal_timer_t FxdTiCtrl::stepperCmdBuff_StepRelativeTi[FTM_STEPPERCMD_BUFF_SIZE] = {0U};  // Buffer of the stepper command timing.
-uint8_t FxdTiCtrl::stepperCmdBuff_ApplyDir[FTM_STEPPERCMD_DIR_SIZE] = {0U};             // Buffer of whether DIR needs to be updated.
 uint32_t FxdTiCtrl::stepperCmdBuff_produceIdx = 0,  // Index of next stepper command write to the buffer.
          FxdTiCtrl::stepperCmdBuff_consumeIdx = 0;  // Index of next stepper command read from the buffer.
 
@@ -62,17 +60,17 @@ bool FxdTiCtrl::sts_stepperBusy = false;          // The stepper buffer has item
 // Private variables.
 // NOTE: These are sized for Ulendo FBS use.
 #if HAS_X_AXIS
-  float FxdTiCtrl::xd[2 * (FTM_BATCH_SIZE)],  // = {0.0f} Storage for fixed-time-based trajectory.
+  float FxdTiCtrl::xd[FTM_WINDOW_SIZE],  // = {0.0f} Storage for fixed-time-based trajectory.
         FxdTiCtrl::xm[FTM_BATCH_SIZE];        // = {0.0f} Storage for modified fixed-time-based trajectory.
 #endif
 #if HAS_Y_AXIS
-  float FxdTiCtrl::yd[2 * (FTM_BATCH_SIZE)], FxdTiCtrl::ym[FTM_BATCH_SIZE];
+  float FxdTiCtrl::yd[FTM_WINDOW_SIZE], FxdTiCtrl::ym[FTM_BATCH_SIZE];
 #endif
 #if HAS_Z_AXIS
-  float FxdTiCtrl::zd[2 * (FTM_BATCH_SIZE)], FxdTiCtrl::zm[FTM_BATCH_SIZE];
+  float FxdTiCtrl::zd[FTM_WINDOW_SIZE], FxdTiCtrl::zm[FTM_BATCH_SIZE];
 #endif
 #if HAS_EXTRUDERS
-  float FxdTiCtrl::ed[2 * (FTM_BATCH_SIZE)], FxdTiCtrl::em[FTM_BATCH_SIZE];
+  float FxdTiCtrl::ed[FTM_WINDOW_SIZE], FxdTiCtrl::em[FTM_BATCH_SIZE];
 #endif
 
 block_t* FxdTiCtrl::current_block_cpy = nullptr; // Pointer to current block being processed.
@@ -124,29 +122,24 @@ uint32_t FxdTiCtrl::max_intervals;              // Total number of data points t
 // Make vector variables.
 uint32_t FxdTiCtrl::makeVector_idx = 0,                     // Index of fixed time trajectory generation of the overall block.
          FxdTiCtrl::makeVector_idx_z1 = 0,                  // Storage for the previously calculated index above.
-         FxdTiCtrl::makeVector_batchIdx = FTM_BATCH_SIZE;   // Index of fixed time trajectory generation within the batch.
+         FxdTiCtrl::makeVector_batchIdx = (FTM_BATCH_SIZE); // Index of fixed time trajectory generation within the batch.
 
 // Interpolation variables.
 #if HAS_X_AXIS
   int32_t FxdTiCtrl::x_steps = 0;                               // Step count accumulator.
-  stepDirState_t FxdTiCtrl::x_dirState = stepDirState_NOT_SET;  // Memory of the currently set step direction of the axis.
 #endif
 #if HAS_Y_AXIS
   int32_t FxdTiCtrl::y_steps = 0;
-  stepDirState_t FxdTiCtrl::y_dirState = stepDirState_NOT_SET;
 #endif
 #if HAS_Z_AXIS
   int32_t FxdTiCtrl::z_steps = 0;
-  stepDirState_t FxdTiCtrl::z_dirState = stepDirState_NOT_SET;
 #endif
 #if HAS_EXTRUDERS
   int32_t FxdTiCtrl::e_steps = 0;
-  stepDirState_t FxdTiCtrl::e_dirState = stepDirState_NOT_SET;
 #endif
 
 uint32_t FxdTiCtrl::interpIdx = 0,                    // Index of current data point being interpolated.
          FxdTiCtrl::interpIdx_z1 = 0;                 // Storage for the previously calculated index above.
-hal_timer_t FxdTiCtrl::nextStepTicks = FTM_MIN_TICKS; // Accumulator for the next step time (in ticks).
 
 // Shaping variables.
 #if HAS_X_AXIS
@@ -188,15 +181,15 @@ void FxdTiCtrl::runoutBlock() {
   if (runoutEna && !batchRdy) {   // If the window is full already (block intervals was a multiple of
                                   // the batch size), or runout is not enabled, no runout is needed.
     // Fill out the trajectory window with the last position calculated.
-    if (makeVector_batchIdx > FTM_BATCH_SIZE) {
-      for (uint32_t i = makeVector_batchIdx; i < 2 * (FTM_BATCH_SIZE); i++) {
+    if (makeVector_batchIdx > (FTM_WINDOW_SIZE - FTM_BATCH_SIZE)) {
+      for (uint32_t i = makeVector_batchIdx; i < (FTM_WINDOW_SIZE); i++) {
                              xd[i] = xd[makeVector_batchIdx - 1];
         TERN_(HAS_Y_AXIS,    yd[i] = yd[makeVector_batchIdx - 1]);
         TERN_(HAS_Y_AXIS,    zd[i] = zd[makeVector_batchIdx - 1]);
         TERN_(HAS_EXTRUDERS, ed[i] = ed[makeVector_batchIdx - 1]);
       }
     }
-    makeVector_batchIdx = FTM_BATCH_SIZE;
+    makeVector_batchIdx = (FTM_WINDOW_SIZE - FTM_BATCH_SIZE);
     batchRdy = true;
   }
   runoutEna = false;
@@ -234,21 +227,20 @@ void FxdTiCtrl::loop() {
 
     // Call Ulendo FBS here.
 
-    memcpy(xm, &xd[FTM_BATCH_SIZE], sizeof(xm));
-    TERN_(HAS_Y_AXIS, memcpy(ym, &yd[FTM_BATCH_SIZE], sizeof(ym)));
+    memcpy(xm, xd, sizeof(xm));
+    TERN_(HAS_Y_AXIS, memcpy(ym, yd, sizeof(ym)));
 
     // Done compensating ...
 
     // Copy the uncompensated vectors.
-    TERN_(HAS_Z_AXIS,    memcpy(zm, &zd[FTM_BATCH_SIZE], sizeof(zm)));
-    TERN_(HAS_EXTRUDERS, memcpy(em, &ed[FTM_BATCH_SIZE], sizeof(em)));
+    TERN_(HAS_Z_AXIS,    memcpy(zm, zd, sizeof(zm)));
+    TERN_(HAS_EXTRUDERS, memcpy(em, ed, sizeof(em)));
 
     // Shift the time series back in the window.
-    memcpy(xd, &xd[FTM_BATCH_SIZE], sizeof(xd) / 2);
-    TERN_(HAS_Y_AXIS, memcpy(yd, &yd[FTM_BATCH_SIZE], sizeof(yd) / 2));
-    // Disabled by comment as these are uncompensated, the lower half is not used.
-    //TERN_(HAS_Z_AXIS,    memcpy(zd, &zd[FTM_BATCH_SIZE], (sizeof(zd) / 2)));
-    //TERN_(HAS_EXTRUDERS, memcpy(ed, &ed[FTM_BATCH_SIZE], (sizeof(ed) / 2)));
+    memcpy(xd, &xd[FTM_BATCH_SIZE], (FTM_WINDOW_SIZE - FTM_BATCH_SIZE)*sizeof(float));
+    TERN_(HAS_Y_AXIS,    memcpy(yd, &yd[FTM_BATCH_SIZE], (FTM_WINDOW_SIZE - FTM_BATCH_SIZE)*sizeof(float)));
+    TERN_(HAS_Z_AXIS,    memcpy(zd, &zd[FTM_BATCH_SIZE], (FTM_WINDOW_SIZE - FTM_BATCH_SIZE)*sizeof(float)));
+    TERN_(HAS_EXTRUDERS, memcpy(ed, &ed[FTM_BATCH_SIZE], (FTM_WINDOW_SIZE - FTM_BATCH_SIZE)*sizeof(float)));
 
     // ... data is ready in xm, ym, zm, em.
     batchRdyForInterp = true;
@@ -417,7 +409,7 @@ void FxdTiCtrl::reset() {
 
   stepperCmdBuff_produceIdx = stepperCmdBuff_consumeIdx = 0;
 
-  for (uint32_t i = 0U; i < (FTM_BATCH_SIZE); i++) { // Reset trajectory history
+  for (uint32_t i = 0U; i < (FTM_WINDOW_SIZE - FTM_BATCH_SIZE); i++) { // Reset trajectory history
     TERN_(HAS_X_AXIS,    xd[i] = 0.0f);
     TERN_(HAS_Y_AXIS,    yd[i] = 0.0f);
     TERN_(HAS_Z_AXIS,    zd[i] = 0.0f);
@@ -442,13 +434,6 @@ void FxdTiCtrl::reset() {
   TERN_(HAS_EXTRUDERS, e_steps = 0);
 
   interpIdx = interpIdx_z1 = 0;
-
-  TERN_(HAS_X_AXIS,    x_dirState = stepDirState_NOT_SET);
-  TERN_(HAS_Y_AXIS,    y_dirState = stepDirState_NOT_SET);
-  TERN_(HAS_Z_AXIS,    z_dirState = stepDirState_NOT_SET);
-  TERN_(HAS_EXTRUDERS, e_dirState = stepDirState_NOT_SET);
-
-  nextStepTicks = FTM_MIN_TICKS;
 
   #if HAS_X_AXIS
     for (uint32_t i = 0U; i < (FTM_ZMAX); i++) { xd_zi[i] = 0.0f; TERN_(HAS_Y_AXIS, yd_zi[i] = 0.0f); }
@@ -668,8 +653,8 @@ void FxdTiCtrl::makeVector() {
   #endif
 
   // Filled up the queue with regular and shaped steps
-  if (++makeVector_batchIdx == 2 * (FTM_BATCH_SIZE)) {
-    makeVector_batchIdx = FTM_BATCH_SIZE;
+  if (++makeVector_batchIdx == (FTM_WINDOW_SIZE)) {
+    makeVector_batchIdx = (FTM_WINDOW_SIZE - FTM_BATCH_SIZE);
     batchRdy = true;
   }
 
@@ -730,20 +715,11 @@ void FxdTiCtrl::convertToSteps(const uint32_t idx) {
     #endif
   #endif
 
-  bool any_dirChange = (false
-    || TERN0(HAS_X_AXIS,    (x_delta > 0 && x_dirState != stepDirState_POS) || (x_delta < 0 && x_dirState != stepDirState_NEG))
-    || TERN0(HAS_Y_AXIS,    (y_delta > 0 && y_dirState != stepDirState_POS) || (y_delta < 0 && y_dirState != stepDirState_NEG))
-    || TERN0(HAS_Z_AXIS,    (z_delta > 0 && z_dirState != stepDirState_POS) || (z_delta < 0 && z_dirState != stepDirState_NEG))
-    || TERN0(HAS_EXTRUDERS, (e_delta > 0 && e_dirState != stepDirState_POS) || (e_delta < 0 && e_dirState != stepDirState_NEG))
-  );
-
   for (uint32_t i = 0U; i < (FTM_STEPS_PER_UNIT_TIME); i++) {
 
     // TODO: (?) Since the *delta variables will not change,
     // the comparison may be done once before iterating at
     // expense of storage and lines of code.
-
-    bool anyStep = false;
 
     stepperCmdBuff[stepperCmdBuff_produceIdx] = 0;
 
@@ -758,7 +734,6 @@ void FxdTiCtrl::convertToSteps(const uint32_t idx) {
           x_steps++;
           stepperCmdBuff[stepperCmdBuff_produceIdx] |= _BV(FT_BIT_DIR_X) | _BV(FT_BIT_STEP_X);
           x_err_P += x_delta - (FTM_STEPS_PER_UNIT_TIME);
-          anyStep = true;
         }
       }
       else {
@@ -769,7 +744,6 @@ void FxdTiCtrl::convertToSteps(const uint32_t idx) {
           x_steps--;
           stepperCmdBuff[stepperCmdBuff_produceIdx] |= _BV(FT_BIT_STEP_X);
           x_err_P += x_delta + (FTM_STEPS_PER_UNIT_TIME);
-          anyStep = true;
         }
       }
     #endif // HAS_X_AXIS
@@ -783,7 +757,6 @@ void FxdTiCtrl::convertToSteps(const uint32_t idx) {
           y_steps++;
           stepperCmdBuff[stepperCmdBuff_produceIdx] |= _BV(FT_BIT_DIR_Y) | _BV(FT_BIT_STEP_Y);
           y_err_P += y_delta - (FTM_STEPS_PER_UNIT_TIME);
-          anyStep = true;
         }
       }
       else {
@@ -794,7 +767,6 @@ void FxdTiCtrl::convertToSteps(const uint32_t idx) {
           y_steps--;
           stepperCmdBuff[stepperCmdBuff_produceIdx] |= _BV(FT_BIT_STEP_Y);
           y_err_P += y_delta + (FTM_STEPS_PER_UNIT_TIME);
-          anyStep = true;
         }
       }
     #endif // HAS_Y_AXIS
@@ -808,7 +780,6 @@ void FxdTiCtrl::convertToSteps(const uint32_t idx) {
           z_steps++;
           stepperCmdBuff[stepperCmdBuff_produceIdx] |= _BV(FT_BIT_DIR_Z) | _BV(FT_BIT_STEP_Z);
           z_err_P += z_delta - (FTM_STEPS_PER_UNIT_TIME);
-          anyStep = true;
         }
       }
       else {
@@ -819,7 +790,6 @@ void FxdTiCtrl::convertToSteps(const uint32_t idx) {
           z_steps--;
           stepperCmdBuff[stepperCmdBuff_produceIdx] |= _BV(FT_BIT_STEP_Z);
           z_err_P += z_delta + (FTM_STEPS_PER_UNIT_TIME);
-          anyStep = true;
         }
       }
     #endif // HAS_Z_AXIS
@@ -833,7 +803,6 @@ void FxdTiCtrl::convertToSteps(const uint32_t idx) {
           e_steps++;
           stepperCmdBuff[stepperCmdBuff_produceIdx] |= _BV(FT_BIT_DIR_E) | _BV(FT_BIT_STEP_E);
           e_err_P += e_delta - (FTM_STEPS_PER_UNIT_TIME);
-          anyStep = true;
         }
       }
       else {
@@ -844,76 +813,17 @@ void FxdTiCtrl::convertToSteps(const uint32_t idx) {
           e_steps--;
           stepperCmdBuff[stepperCmdBuff_produceIdx] |= _BV(FT_BIT_STEP_E);
           e_err_P += e_delta + (FTM_STEPS_PER_UNIT_TIME);
-          anyStep = true;
         }
       }
     #endif // HAS_EXTRUDERS
 
-    if (!anyStep) {
-      nextStepTicks += (FTM_MIN_TICKS);
+    if (stepperCmdBuff_produceIdx == (FTM_STEPPERCMD_BUFF_SIZE - 1)) {
+      stepperCmdBuff_produceIdx = 0;
     }
     else {
-      stepperCmdBuff_StepRelativeTi[stepperCmdBuff_produceIdx] = nextStepTicks;
-
-      const uint8_t dir_index = stepperCmdBuff_produceIdx >> 3,
-                    dir_bit = stepperCmdBuff_produceIdx & 0x7;
-      if (any_dirChange) {
-        SBI(stepperCmdBuff_ApplyDir[dir_index], dir_bit);
-        #if HAS_X_AXIS
-          if (x_delta > 0) {
-            stepperCmdBuff[stepperCmdBuff_produceIdx] |= _BV(FT_BIT_DIR_X);
-            x_dirState = stepDirState_POS;
-          }
-          else {
-            x_dirState = stepDirState_NEG;
-          }
-        #endif
-
-        #if HAS_Y_AXIS
-          if (y_delta > 0) {
-            stepperCmdBuff[stepperCmdBuff_produceIdx] |= _BV(FT_BIT_DIR_Y);
-            y_dirState = stepDirState_POS;
-          }
-          else {
-            y_dirState = stepDirState_NEG;
-          }
-        #endif
-
-        #if HAS_Z_AXIS
-          if (z_delta > 0) {
-            stepperCmdBuff[stepperCmdBuff_produceIdx] |= _BV(FT_BIT_DIR_Z);
-            z_dirState = stepDirState_POS;
-          }
-          else {
-            z_dirState = stepDirState_NEG;
-          }
-        #endif
-
-        #if HAS_EXTRUDERS
-          if (e_delta > 0) {
-            stepperCmdBuff[stepperCmdBuff_produceIdx] |= _BV(FT_BIT_DIR_E);
-            e_dirState = stepDirState_POS;
-          }
-          else {
-            e_dirState = stepDirState_NEG;
-          }
-        #endif
-
-        any_dirChange = false;
-      }
-      else { // ...no direction change.
-        CBI(stepperCmdBuff_ApplyDir[dir_index], dir_bit);
-      }
-
-      if (stepperCmdBuff_produceIdx == (FTM_STEPPERCMD_BUFF_SIZE) - 1) {
-        stepperCmdBuff_produceIdx = 0;
-      }
-      else {
-        stepperCmdBuff_produceIdx++;
-      }
-
-      nextStepTicks = FTM_MIN_TICKS;
+      stepperCmdBuff_produceIdx++;
     }
+
   } // FTM_STEPS_PER_UNIT_TIME loop
 }
 

@@ -26,8 +26,6 @@
 
 #include "ft_types.h"
 
-#define FTM_STEPPERCMD_DIR_SIZE ((FTM_STEPPERCMD_BUFF_SIZE + 7) / 8)
-
 #if HAS_X_AXIS && (HAS_Z_AXIS || HAS_EXTRUDERS)
   #define HAS_DYNAMIC_FREQ 1
   #if HAS_Z_AXIS
@@ -93,8 +91,6 @@ class FxdTiCtrl {
     }
 
     static ft_command_t stepperCmdBuff[FTM_STEPPERCMD_BUFF_SIZE];               // Buffer of stepper commands.
-    static hal_timer_t stepperCmdBuff_StepRelativeTi[FTM_STEPPERCMD_BUFF_SIZE]; // Buffer of the stepper command timing.
-    static uint8_t stepperCmdBuff_ApplyDir[FTM_STEPPERCMD_DIR_SIZE];            // Buffer of whether DIR needs to be updated.
     static uint32_t stepperCmdBuff_produceIdx,              // Index of next stepper command write to the buffer.
                     stepperCmdBuff_consumeIdx;              // Index of next stepper command read from the buffer.
 
@@ -127,16 +123,16 @@ class FxdTiCtrl {
   private:
 
     #if HAS_X_AXIS
-      static float xd[2 * (FTM_BATCH_SIZE)], xm[FTM_BATCH_SIZE];
+      static float xd[FTM_WINDOW_SIZE], xm[FTM_BATCH_SIZE];
     #endif
     #if HAS_Y_AXIS
-      static float yd[2 * (FTM_BATCH_SIZE)], ym[FTM_BATCH_SIZE];
+      static float yd[FTM_WINDOW_SIZE], ym[FTM_BATCH_SIZE];
     #endif
     #if HAS_Z_AXIS
-      static float zd[2 * (FTM_BATCH_SIZE)], zm[FTM_BATCH_SIZE];
+      static float zd[FTM_WINDOW_SIZE], zm[FTM_BATCH_SIZE];
     #endif
     #if HAS_EXTRUDERS
-      static float ed[2 * (FTM_BATCH_SIZE)], em[FTM_BATCH_SIZE];
+      static float ed[FTM_WINDOW_SIZE], em[FTM_BATCH_SIZE];
     #endif
 
     static block_t *current_block_cpy;
@@ -176,22 +172,16 @@ class FxdTiCtrl {
                     interpIdx_z1;
     #if HAS_X_AXIS
       static int32_t x_steps;
-      static stepDirState_t x_dirState;
     #endif
     #if HAS_Y_AXIS
       static int32_t y_steps;
-      static stepDirState_t y_dirState;
     #endif
     #if HAS_Z_AXIS
       static int32_t z_steps;
-      static stepDirState_t z_dirState;
     #endif
     #if HAS_EXTRUDERS
       static int32_t e_steps;
-      static stepDirState_t e_dirState;
     #endif
-
-    static hal_timer_t nextStepTicks;
 
     // Shaping variables.
     #if HAS_X_AXIS
