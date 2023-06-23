@@ -84,6 +84,7 @@ bool FxdTiCtrl::batchRdy = false;               // Indicates a batch of the fixe
 bool FxdTiCtrl::batchRdyForInterp = false;      // Indicates the batch is done being post processed,
                                                 //  if applicable, and is ready to be converted to step commands.
 bool FxdTiCtrl::runoutEna = false;              // True if runout of the block hasn't been done and is allowed.
+bool FxdTiCtrl::runout = false;                 // Indicates if runout is in progress.
 
 // Trapezoid data variables.
 #if HAS_X_AXIS
@@ -191,6 +192,7 @@ void FxdTiCtrl::runoutBlock() {
     }
     makeVector_batchIdx = (FTM_WINDOW_SIZE - FTM_BATCH_SIZE);
     batchRdy = true;
+    runout = true;
   }
   runoutEna = false;
 }
@@ -214,12 +216,25 @@ void FxdTiCtrl::loop() {
   }
 
   // Planner processing and block conversion.
-  if (!blockProcRdy) stepper.fxdTiCtrl_BlockQueueUpdate();
+  if (!blockProcRdy && !runout) stepper.fxdTiCtrl_BlockQueueUpdate();
 
   if (blockProcRdy) {
     if (!blockProcRdy_z1) loadBlockData(current_block_cpy); // One-shot.
     while (!blockProcDn && !batchRdy && (makeVector_idx - makeVector_idx_z1 < (FTM_POINTS_PER_LOOP)))
       makeVector();
+  }
+
+  if (runout && !batchRdy) { // The lower half of the window has been runout.
+    // Runout the upper half of the window: the upper half has been shifted into the lower
+    // half. Fillout the upper half so another batch can be processed.
+    for (uint32_t i = (FTM_WINDOW_SIZE - FTM_BATCH_SIZE); i < (FTM_WINDOW_SIZE - 1); i++) {
+                             xd[i] = xd[(FTM_WINDOW_SIZE - 1)]; // Since a runout occured, the last point has the final position.
+        TERN_(HAS_Y_AXIS,    yd[i] = yd[(FTM_WINDOW_SIZE - 1)]);
+        TERN_(HAS_Y_AXIS,    zd[i] = zd[(FTM_WINDOW_SIZE - 1)]);
+        TERN_(HAS_EXTRUDERS, ed[i] = ed[(FTM_WINDOW_SIZE - 1)]);
+    }
+    batchRdy = true;
+    runout = false;
   }
 
   // FBS / post processing.

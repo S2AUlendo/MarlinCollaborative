@@ -139,6 +139,7 @@ class FxdTiCtrl {
     static bool blockProcRdy, blockProcRdy_z1, blockProcDn;
     static bool batchRdy, batchRdyForInterp;
     static bool runoutEna;
+    static bool runout;
 
     // Trapezoid data variables.
     #if HAS_X_AXIS
