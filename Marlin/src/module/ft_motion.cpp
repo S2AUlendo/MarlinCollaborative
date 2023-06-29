@@ -26,6 +26,7 @@
 
 #include "ft_motion.h"
 #include "stepper.h" // Access stepper block queue function and abort status.
+                     // Access planner singleton for settings, busy flag, etc..
 
 FxdTiCtrl fxdTiCtrl;
 
@@ -83,8 +84,8 @@ bool FxdTiCtrl::batchRdy = false;               // Indicates a batch of the fixe
                                                 //  post processed, if applicable, then interpolated.
 bool FxdTiCtrl::batchRdyForInterp = false;      // Indicates the batch is done being post processed,
                                                 //  if applicable, and is ready to be converted to step commands.
-bool FxdTiCtrl::runoutEna = false;              // True if runout of the block hasn't been done and is allowed.
-bool FxdTiCtrl::runout = false;                 // Indicates if runout is in progress.
+bool FxdTiCtrl::runoutEna = false;       // True if runout of the block hasn't been done and is allowed.
+bool FxdTiCtrl::blockDataIsRunout = false;      // Indicates the last loaded block variables are for a runout.
 
 // Trapezoid data variables.
 #if HAS_X_AXIS
@@ -179,20 +180,39 @@ void FxdTiCtrl::startBlockProc(block_t * const current_block) {
 // Moves any free data points to the stepper buffer even if a full batch isn't ready.
 void FxdTiCtrl::runoutBlock() {
 
-  if (runoutEna && !batchRdy) {   // If the window is full already (block intervals was a multiple of
-                                  // the batch size), or runout is not enabled, no runout is needed.
-    // Fill out the trajectory window with the last position calculated.
-    if (makeVector_batchIdx > (FTM_WINDOW_SIZE - FTM_BATCH_SIZE)) {
-      for (uint32_t i = makeVector_batchIdx; i < (FTM_WINDOW_SIZE); i++) {
-                             xd[i] = xd[makeVector_batchIdx - 1];
-        TERN_(HAS_Y_AXIS,    yd[i] = yd[makeVector_batchIdx - 1]);
-        TERN_(HAS_Y_AXIS,    zd[i] = zd[makeVector_batchIdx - 1]);
-        TERN_(HAS_EXTRUDERS, ed[i] = ed[makeVector_batchIdx - 1]);
-      }
+  if (runoutEna) {
+    #if HAS_X_AXIS
+      x_startPosn = x_endPosn_prevBlock;
+      x_Ratio = 0.f;
+    #endif
+    #if HAS_Y_AXIS
+      y_startPosn = y_endPosn_prevBlock;
+      y_Ratio = 0.f;
+    #endif
+    #if HAS_Z_AXIS
+      z_startPosn = z_endPosn_prevBlock;
+      z_Ratio = 0.f;
+    #endif
+    #if HAS_EXTRUDERS
+      e_startPosn = e_endPosn_prevBlock;
+      e_Ratio = 0.f;
+    #endif
+    
+    accel_P = 0.f;
+    decel_P = 0.f;
+    
+    if (WITHIN(cfg.mode, 10U, 19U)) {
+      max_intervals = FTM_BATCH_SIZE * ceil(FTM_ZMAX/FTM_BATCH_SIZE);
+    } else {
+      max_intervals = FTM_BATCH_SIZE * ceil((FTM_FS/FTM_BATCH_SIZE)*0.0f); // For custom controls, set this constant to settling time.
     }
-    makeVector_batchIdx = (FTM_WINDOW_SIZE - FTM_BATCH_SIZE);
-    batchRdy = true;
-    runout = true;
+    max_intervals = max_intervals > (FTM_BATCH_SIZE*(ceil(FTM_WINDOW_SIZE/FTM_BATCH_SIZE) - 1)) ? max_intervals : (FTM_BATCH_SIZE*(ceil(FTM_WINDOW_SIZE/FTM_BATCH_SIZE)));
+    max_intervals += FTM_WINDOW_SIZE - makeVector_batchIdx;
+
+    blockProcRdy = true;
+    blockProcDn = false;
+    blockDataIsRunout = true;
+
   }
   runoutEna = false;
 }
@@ -211,30 +231,20 @@ void FxdTiCtrl::loop() {
     if (sts_stepperBusy) return;          // Wait until motion buffers are emptied
     reset();
     blockProcDn = true;                   // Set queueing to look for next block.
-    runoutEna = false;                    // Disabling running out this block, since we want to halt the motion.
+    runoutEna = false;             // Disabling running out this block, since we want to halt the motion.
     stepper.abort_current_block = false;  // Abort finished.
   }
 
   // Planner processing and block conversion.
-  if (!blockProcRdy && !runout) stepper.fxdTiCtrl_BlockQueueUpdate();
+  if (!blockProcRdy) stepper.fxdTiCtrl_BlockQueueUpdate();
 
   if (blockProcRdy) {
-    if (!blockProcRdy_z1) loadBlockData(current_block_cpy); // One-shot.
+    if (!blockProcRdy_z1) { // One-shot.
+      if (!blockDataIsRunout) loadBlockData(current_block_cpy);
+      else blockDataIsRunout = false;
+    }
     while (!blockProcDn && !batchRdy && (makeVector_idx - makeVector_idx_z1 < (FTM_POINTS_PER_LOOP)))
       makeVector();
-  }
-
-  if (runout && !batchRdy) { // The lower half of the window has been runout.
-    // Runout the upper half of the window: the upper half has been shifted into the lower
-    // half. Fillout the upper half so another batch can be processed.
-    for (uint32_t i = (FTM_WINDOW_SIZE - FTM_BATCH_SIZE); i < (FTM_WINDOW_SIZE - 1); i++) {
-                             xd[i] = xd[(FTM_WINDOW_SIZE - 1)]; // Since a runout occured, the last point has the final position.
-        TERN_(HAS_Y_AXIS,    yd[i] = yd[(FTM_WINDOW_SIZE - 1)]);
-        TERN_(HAS_Y_AXIS,    zd[i] = zd[(FTM_WINDOW_SIZE - 1)]);
-        TERN_(HAS_EXTRUDERS, ed[i] = ed[(FTM_WINDOW_SIZE - 1)]);
-    }
-    batchRdy = true;
-    runout = false;
   }
 
   // FBS / post processing.
@@ -565,7 +575,7 @@ void FxdTiCtrl::loadBlockData(block_t * const current_block) {
   s_2e = s_1e + F_P * T2_P;
 
   // One less than (Accel + Coasting + Decel) datapoints
-  max_intervals = N1 + N2 + N3 - 1U;
+  max_intervals = N1 + N2 + N3;
 
   TERN_(HAS_X_AXIS,    x_endPosn_prevBlock += x_moveDist);
   TERN_(HAS_Y_AXIS,    y_endPosn_prevBlock += y_moveDist);
@@ -673,13 +683,11 @@ void FxdTiCtrl::makeVector() {
     batchRdy = true;
   }
 
-  if (makeVector_idx == max_intervals) {
+  if (++makeVector_idx == max_intervals) {
     blockProcDn = true;
     blockProcRdy = false;
     makeVector_idx = 0;
   }
-  else
-    makeVector_idx++;
 }
 
 // Interpolates single data point to stepper commands.
