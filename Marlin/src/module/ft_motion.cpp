@@ -169,7 +169,6 @@ void FxdTiCtrl::loop() {
     if (sts_stepperBusy) return;          // Wait until motion buffers are emptied
     reset();
     blockProcDn = true;                   // Set queueing to look for next block.
-    runoutEna = false;                    // Disabling running out this block, since we want to halt the motion.
     stepper.abort_current_block = false;  // Abort finished.
   }
 
@@ -190,7 +189,7 @@ void FxdTiCtrl::loop() {
 
     // Call Ulendo FBS here.
 
-    // Copy the uncompensated vectors. (XY done, other axes uncompensated)
+    // Copy any uncompensated vectors.
     #define TCOPY(A) memcpy(trajMod.A, traj.A, sizeof(trajMod.A))
     LOGICAL_AXIS_CODE(
       TCOPY(e),
@@ -199,7 +198,7 @@ void FxdTiCtrl::loop() {
       TCOPY(u), TCOPY(v), TCOPY(w)
     );
 
-    // Shift the time series back in the window for (shaped) X and Y
+    // Shift the time series back in the window.
     #define TSHIFT(A) memcpy(traj.A, &traj.A[FTM_BATCH_SIZE], (FTM_WINDOW_SIZE - FTM_BATCH_SIZE) * sizeof(traj.A[0]))
     LOGICAL_AXIS_CODE(
       TSHIFT(e),
@@ -207,11 +206,6 @@ void FxdTiCtrl::loop() {
       TSHIFT(i), TSHIFT(j), TSHIFT(k),
       TSHIFT(u), TSHIFT(v), TSHIFT(w)
     );
-    //TERN_(HAS_X_AXIS, memcpy(traj.x, &traj.x[FTM_BATCH_SIZE], sizeof(traj.x) / 2));
-    //TERN_(HAS_Y_AXIS, memcpy(traj.y, &traj.y[FTM_BATCH_SIZE], sizeof(traj.y) / 2));
-
-    // Z...W and E Disabled! Uncompensated so the lower half is not used.
-    //TERN_(HAS_Z_AXIS, memcpy(&traj.z[0], &traj.z[FTM_BATCH_SIZE], sizeof(traj.z) / 2));
 
     // ... data is ready in trajMod.
     batchRdyForInterp = true;

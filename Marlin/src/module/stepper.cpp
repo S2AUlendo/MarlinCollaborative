@@ -1498,7 +1498,6 @@ void Stepper::isr() {
 
     #if ENABLED(FT_MOTION)
 
-      // NOTE STEPPER_TIMER_RATE is equal to 2000000, not what VSCode shows
       const bool using_fxtictrl = fxdTiCtrl.cfg.mode;
       if (using_fxtictrl) {
         if (!nextMainISR) {
@@ -1508,10 +1507,10 @@ void Stepper::isr() {
 
         // Define 2.5 msec task for auxilliary functions.
         if (!fxdTiCtrl_nextAuxISR) {
+          fxdTiCtrl_refreshAxisDidMove();
           endstops.update();
           TERN_(BABYSTEPPING, if (babystep.has_steps()) babystepping_isr());
-          fxdTiCtrl_refreshAxisDidMove();
-          fxdTiCtrl_nextAuxISR = 0.0025f * (STEPPER_TIMER_RATE);
+          fxdTiCtrl_nextAuxISR = 0.0025f * (STEPPER_TIMER_RATE); // TODO: Aux task magic number
         }
 
         interval = _MIN(nextMainISR, fxdTiCtrl_nextAuxISR);
@@ -3380,6 +3379,8 @@ void Stepper::report_positions() {
 
 #if ENABLED(FT_MOTION)
 
+  xyze_bool_t Stepper::didMoveReport;
+
   // Set stepper I/O for fixed time controller.
   void Stepper::fxdTiCtrl_stepper() {
 
@@ -3404,11 +3405,29 @@ void Stepper::report_positions() {
       TEST(command, FT_BIT_STEP_U), TEST(command, FT_BIT_STEP_V), TEST(command, FT_BIT_STEP_W)
     );
 
+    // TODO: LOGICAL_AXIS_CODE (?)
+    if (axis_step.e) { didMoveReport.e = true; }
+    if (axis_step.x) { didMoveReport.x = true; }
+    if (axis_step.y) { didMoveReport.y = true; }
+    if (axis_step.z) { didMoveReport.z = true; }
+    // if (axis_step.i) { didMoveReport.i = true; }
+    // if (axis_step.j) { didMoveReport.j = true; }
+    // if (axis_step.k) { didMoveReport.k = true; }
+    // if (axis_step.u) { didMoveReport.u = true; }
+    // if (axis_step.v) { didMoveReport.v = true; }
+    // if (axis_step.w) { didMoveReport.w = true; }
+
     const xyze_bool_t axis_dir = LOGICAL_AXIS_ARRAY(
-      TEST(command, FT_BIT_DIR_E),
-      TEST(command, FT_BIT_DIR_X), TEST(command, FT_BIT_DIR_Y), TEST(command, FT_BIT_DIR_Z),
-      TEST(command, FT_BIT_DIR_I), TEST(command, FT_BIT_DIR_J), TEST(command, FT_BIT_DIR_K),
-      TEST(command, FT_BIT_DIR_U), TEST(command, FT_BIT_DIR_V), TEST(command, FT_BIT_DIR_W)
+      TEST(command, FT_BIT_STEP_E) ? TEST(command, FT_BIT_DIR_E) : last_direction_bits.e,
+      TEST(command, FT_BIT_STEP_X) ? TEST(command, FT_BIT_DIR_X) : last_direction_bits.x,
+      TEST(command, FT_BIT_STEP_Y) ? TEST(command, FT_BIT_DIR_Y) : last_direction_bits.y,
+      TEST(command, FT_BIT_STEP_Z) ? TEST(command, FT_BIT_DIR_Z) : last_direction_bits.z,
+      TEST(command, FT_BIT_STEP_I) ? TEST(command, FT_BIT_DIR_I) : last_direction_bits.i,
+      TEST(command, FT_BIT_STEP_J) ? TEST(command, FT_BIT_DIR_J) : last_direction_bits.j,
+      TEST(command, FT_BIT_STEP_K) ? TEST(command, FT_BIT_DIR_K) : last_direction_bits.k,
+      TEST(command, FT_BIT_STEP_U) ? TEST(command, FT_BIT_DIR_U) : last_direction_bits.u,
+      TEST(command, FT_BIT_STEP_V) ? TEST(command, FT_BIT_DIR_V) : last_direction_bits.v,
+      TEST(command, FT_BIT_STEP_W) ? TEST(command, FT_BIT_DIR_W) : last_direction_bits.w
     );
 
     // Apply directions (which will apply to the entire linear move)
@@ -3469,8 +3488,8 @@ void Stepper::report_positions() {
       // If the current block is not done processing, return right away
       if (!fxdTiCtrl.getBlockProcDn()) return;
 
-      axis_did_move.reset();
-      discard_current_block();
+      current_block = nullptr;
+      planner.release_current_block();
     }
 
     // Check the buffer for a new block
@@ -3480,23 +3499,20 @@ void Stepper::report_positions() {
       // Sync block? Sync the stepper counts and return
       while (current_block->is_sync()) {
         if (!(current_block->is_fan_sync() || current_block->is_pwr_sync())) _set_position(current_block->position);
-        discard_current_block();
+        current_block = nullptr;
+        planner.release_current_block();
 
         // Try to get a new block
         if (!(current_block = planner.get_current_block()))
-          return; // No more queued movements!image.png
+          return; // No queued blocks.
       }
-
-      // This is needed by motor_direction() and subsequently bed leveling (somehow).
-      // Update it here, even though it will may be out of sync with step commands.
-      last_direction_bits = current_block->direction_bits;
 
       fxdTiCtrl.startBlockProc(current_block);
 
     }
     else {
       fxdTiCtrl.runoutBlock();
-      return; // No queued blocks
+      return; // No queued blocks.
     }
 
   } // Stepper::fxdTiCtrl_BlockQueueUpdate()
@@ -3505,22 +3521,46 @@ void Stepper::report_positions() {
   // delay between the block information and the stepper commands
   void Stepper::fxdTiCtrl_refreshAxisDidMove() {
 
-    // Set the debounce time in seconds.
-    #define AXIS_DID_MOVE_DEB 5 // TODO: The debounce time should be calculated if possible,
-                                // or the set conditions should be changed from the block to
-                                // the motion trajectory or motor commands.
+    static xyze_ulong_t didMoveDeb;
 
     AxisBits didmove;
-    static abce_ulong_t debounce{0};
-    auto debounce_axis = [&](const AxisEnum axis) {
-      if (current_block->steps[axis]) debounce[axis] = (AXIS_DID_MOVE_DEB) * 400; // divide by 0.0025f */
-      if (debounce[axis]) { didmove.bset(axis); debounce[axis]--; }
-    };
-    #define _DEBOUNCE(N) debounce_axis(AxisEnum(N));
 
-    if (current_block) { REPEAT(LOGICAL_AXES, _DEBOUNCE); }
+    // // TODO: This needs the CORE logic from block_phase_isr in the section:
+    // // #if CORE_IS_XY || CORE_IS_XZ
+    // // #else
+    // //   #define X_MOVE_TEST !!current_block->steps.a
+    // // #endif
+
+    #define FTM_AXIS_MOVE_DEB_TI 0.05
+
+    // TODO: LOGICAL_AXIS_CODE (?)
+    
+    if (didMoveReport.e) { didMoveDeb.e = (int)(FTM_AXIS_MOVE_DEB_TI*400); } // TODO: aux rate magic number
+    if (didMoveReport.x) { didMoveDeb.x = (int)(FTM_AXIS_MOVE_DEB_TI*400); }
+    if (didMoveReport.y) { didMoveDeb.y = (int)(FTM_AXIS_MOVE_DEB_TI*400); }
+    if (didMoveReport.z) { didMoveDeb.z = (int)(FTM_AXIS_MOVE_DEB_TI*400); }
+    // if (didMoveReport.i) { didMoveDeb.i = (int)(FTM_AXIS_MOVE_DEB_TI*400); }
+    // if (didMoveReport.j) { didMoveDeb.j = (int)(FTM_AXIS_MOVE_DEB_TI*400); }
+    // if (didMoveReport.k) { didMoveDeb.k = (int)(FTM_AXIS_MOVE_DEB_TI*400); }
+    // if (didMoveReport.u) { didMoveDeb.u = (int)(FTM_AXIS_MOVE_DEB_TI*400); }
+    // if (didMoveReport.v) { didMoveDeb.v = (int)(FTM_AXIS_MOVE_DEB_TI*400); }
+    // if (didMoveReport.w) { didMoveDeb.w = (int)(FTM_AXIS_MOVE_DEB_TI*400); }
+
+    if (didMoveDeb.e) { didmove.bset(E_AXIS); didMoveDeb.e--; }
+    if (didMoveDeb.x) { didmove.bset(X_AXIS); didMoveDeb.x--; }
+    if (didMoveDeb.y) { didmove.bset(Y_AXIS); didMoveDeb.y--; }
+    if (didMoveDeb.z) { didmove.bset(Z_AXIS); didMoveDeb.z--; }
+    // if (didMoveDeb.i) { didmove.bset(I_AXIS); didMoveDeb.i--; }
+    // if (didMoveDeb.j) { didmove.bset(J_AXIS); didMoveDeb.j--; }
+    // if (didMoveDeb.k) { didmove.bset(K_AXIS); didMoveDeb.k--; }
+    // if (didMoveDeb.u) { didmove.bset(U_AXIS); didMoveDeb.u--; }
+    // if (didMoveDeb.v) { didmove.bset(V_AXIS); didMoveDeb.v--; }
+    // if (didMoveDeb.w) { didmove.bset(W_AXIS); didMoveDeb.w--; }
 
     axis_did_move = didmove;
+
+    didMoveReport.reset();
+
   }
 
 #endif // FT_MOTION
