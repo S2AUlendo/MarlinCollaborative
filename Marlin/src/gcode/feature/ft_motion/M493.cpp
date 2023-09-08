@@ -26,6 +26,7 @@
 
 #include "../../gcode.h"
 #include "../../../module/ft_motion.h"
+#include "../../../module/stepper.h"
 
 void say_shaping() {
   // FT Enabled
@@ -153,49 +154,35 @@ void GcodeSuite::M493_report(const bool forReplay/*=true*/) {
 void GcodeSuite::M493() {
   struct { bool update_n:1, update_a:1, reset_ft:1, report_h:1; } flag = { false };
 
-  if (!parser.seen_any()) flag.report_h = true;
+  if (!parser.seen_any())
+    flag.report_h = true;
+  else
+    planner.synchronize();
 
   // Parse 'S' mode parameter.
   if (parser.seenval('S')) {
-    const ftMotionMode_t oldmm = fxdTiCtrl.cfg.mode,
-                         newmm = (ftMotionMode_t)parser.value_byte();
-    switch (newmm) {
-      #if HAS_X_AXIS
-        case ftMotionMode_ZV:
-        case ftMotionMode_ZVD:
-        case ftMotionMode_2HEI:
-        case ftMotionMode_3HEI:
-        case ftMotionMode_MZV:
-        //case ftMotionMode_ULENDO_FBS:
-        //case ftMotionMode_DISCTF:
-      #endif
-      case ftMotionMode_DISABLED:
-      case ftMotionMode_ENABLED:
-        fxdTiCtrl.cfg.mode = newmm;
-        flag.report_h = true;
-        break;
-      default:
-        SERIAL_ECHOLNPGM("?Invalid control mode [M] value.");
-        return;
-    }
+    const ftMotionMode_t newmm = (ftMotionMode_t)parser.value_byte();
 
-    if (fxdTiCtrl.cfg.mode != oldmm) switch (newmm) {
-      default: break;
-      #if HAS_X_AXIS
-        //case ftMotionMode_ULENDO_FBS:
-        //case ftMotionMode_DISCTF:
-        //  break;
-        case ftMotionMode_ZV:
-        case ftMotionMode_ZVD:
-        case ftMotionMode_EI:
-        case ftMotionMode_2HEI:
-        case ftMotionMode_3HEI:
-        case ftMotionMode_MZV:
-          flag.update_n = flag.update_a = true;
-      #endif
-      case ftMotionMode_ENABLED:
-        flag.reset_ft = true;
-        break;
+    if (newmm != fxdTiCtrl.cfg.mode) {
+      switch (newmm) {
+        default: SERIAL_ECHOLNPGM("?Invalid control mode [S] value."); return;
+        #if HAS_X_AXIS
+          case ftMotionMode_ZV:
+          case ftMotionMode_ZVD:
+          case ftMotionMode_EI:
+          case ftMotionMode_2HEI:
+          case ftMotionMode_3HEI:
+          case ftMotionMode_MZV:
+          //case ftMotionMode_ULENDO_FBS:
+          //case ftMotionMode_DISCTF:
+            flag.update_n = flag.update_a = true;
+        #endif
+        case ftMotionMode_DISABLED: flag.reset_ft = true;
+        case ftMotionMode_ENABLED:
+          fxdTiCtrl.cfg.mode = newmm;
+          flag.report_h = true;
+          break;
+      }
     }
   }
 
@@ -205,6 +192,7 @@ void GcodeSuite::M493() {
     if (parser.seen('P')) {
       const bool val = parser.value_bool();
       fxdTiCtrl.cfg.linearAdvEna = val;
+      flag.report_h = true;
       SERIAL_ECHO_TERNARY(val, "Linear Advance ", "en", "dis", "abled.\n");
     }
 
@@ -228,22 +216,16 @@ void GcodeSuite::M493() {
       if (fxdTiCtrl.cfg.modeHasShaper()) {
         const dynFreqMode_t val = dynFreqMode_t(parser.value_byte());
         switch (val) {
+          #if HAS_DYNAMIC_FREQ_MM
+            case dynFreqMode_Z_BASED:
+          #endif
+          #if HAS_DYNAMIC_FREQ_G
+            case dynFreqMode_MASS_BASED:
+          #endif
           case dynFreqMode_DISABLED:
             fxdTiCtrl.cfg.dynFreqMode = val;
             flag.report_h = true;
             break;
-          #if HAS_DYNAMIC_FREQ_MM
-            case dynFreqMode_Z_BASED:
-              fxdTiCtrl.cfg.dynFreqMode = val;
-              flag.report_h = true;
-              break;
-          #endif
-          #if HAS_DYNAMIC_FREQ_G
-            case dynFreqMode_MASS_BASED:
-              fxdTiCtrl.cfg.dynFreqMode = val;
-              flag.report_h = true;
-              break;
-          #endif
           default:
             SERIAL_ECHOLNPGM("?Invalid Dynamic Frequency Mode [D] value.");
             break;
@@ -329,11 +311,15 @@ void GcodeSuite::M493() {
     if (flag.update_a) fxdTiCtrl.updateShapingA();
   #endif
   if (flag.reset_ft) {
-    planner.synchronize();
+    LOGICAL_AXIS_CODE( // Tell the world where we are
+      stepper.set_axis_position(X_AXIS, planner.position.x), stepper.set_axis_position(Y_AXIS, planner.position.y),
+      stepper.set_axis_position(Z_AXIS, planner.position.z), stepper.set_axis_position(E_AXIS, planner.position.e),
+      stepper.set_axis_position(I_AXIS, planner.position.i), stepper.set_axis_position(J_AXIS, planner.position.j),
+      stepper.set_axis_position(K_AXIS, planner.position.k), stepper.set_axis_position(U_AXIS, planner.position.u),
+      stepper.set_axis_position(V_AXIS, planner.position.v), stepper.set_axis_position(W_AXIS, planner.position.w));
     fxdTiCtrl.reset();
   }
   if (flag.report_h) say_shaping();
-
 }
 
 #endif // FT_MOTION
