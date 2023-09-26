@@ -3438,6 +3438,8 @@ void Stepper::report_positions() {
       U_APPLY_DIR(axis_dir.u, false), V_APPLY_DIR(axis_dir.v, false), W_APPLY_DIR(axis_dir.w, false)
     );
 
+    last_direction_bits = axis_dir;
+    
     DIR_WAIT_AFTER();
 
     LOGICAL_AXIS_CODE(
