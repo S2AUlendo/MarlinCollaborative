@@ -3439,23 +3439,26 @@ void Stepper::report_positions() {
     // if (axis_step.v) { didMoveReport.v = true; }
     // if (axis_step.w) { didMoveReport.w = true; }
 
-    const xyze_bool_t axis_dir = LOGICAL_AXIS_ARRAY(
-      axis_step.e ? TEST(command, FT_BIT_DIR_E) : last_direction_bits.e, axis_step.x ? TEST(command, FT_BIT_DIR_X) : last_direction_bits.x,
-      axis_step.y ? TEST(command, FT_BIT_DIR_Y) : last_direction_bits.y, axis_step.z ? TEST(command, FT_BIT_DIR_Z) : last_direction_bits.z,
-      axis_step.i ? TEST(command, FT_BIT_DIR_I) : last_direction_bits.i, axis_step.j ? TEST(command, FT_BIT_DIR_J) : last_direction_bits.j,
-      axis_step.k ? TEST(command, FT_BIT_DIR_K) : last_direction_bits.k, axis_step.u ? TEST(command, FT_BIT_DIR_U) : last_direction_bits.u,
-      axis_step.v ? TEST(command, FT_BIT_DIR_V) : last_direction_bits.v, axis_step.w ? TEST(command, FT_BIT_DIR_W) : last_direction_bits.w
+    last_direction_bits = LOGICAL_AXIS_ARRAY(
+      axis_step.e ? TEST(command, FT_BIT_DIR_E) : last_direction_bits.e,
+      axis_step.x ? TEST(command, FT_BIT_DIR_X) : last_direction_bits.x,
+      axis_step.y ? TEST(command, FT_BIT_DIR_Y) : last_direction_bits.y,
+      axis_step.z ? TEST(command, FT_BIT_DIR_Z) : last_direction_bits.z,
+      axis_step.i ? TEST(command, FT_BIT_DIR_I) : last_direction_bits.i,
+      axis_step.j ? TEST(command, FT_BIT_DIR_J) : last_direction_bits.j,
+      axis_step.k ? TEST(command, FT_BIT_DIR_K) : last_direction_bits.k,
+      axis_step.u ? TEST(command, FT_BIT_DIR_U) : last_direction_bits.u,
+      axis_step.v ? TEST(command, FT_BIT_DIR_V) : last_direction_bits.v,
+      axis_step.w ? TEST(command, FT_BIT_DIR_W) : last_direction_bits.w
     );
 
     // Apply directions (which will apply to the entire linear move)
     LOGICAL_AXIS_CODE(
-      E_APPLY_DIR(axis_dir.e, false),
-      X_APPLY_DIR(axis_dir.x, false), Y_APPLY_DIR(axis_dir.y, false), Z_APPLY_DIR(axis_dir.z, false),
-      I_APPLY_DIR(axis_dir.i, false), J_APPLY_DIR(axis_dir.j, false), K_APPLY_DIR(axis_dir.k, false),
-      U_APPLY_DIR(axis_dir.u, false), V_APPLY_DIR(axis_dir.v, false), W_APPLY_DIR(axis_dir.w, false)
+      E_APPLY_DIR(last_direction_bits.e, false),
+      X_APPLY_DIR(last_direction_bits.x, false), Y_APPLY_DIR(last_direction_bits.y, false), Z_APPLY_DIR(last_direction_bits.z, false),
+      I_APPLY_DIR(last_direction_bits.i, false), J_APPLY_DIR(last_direction_bits.j, false), K_APPLY_DIR(last_direction_bits.k, false),
+      U_APPLY_DIR(last_direction_bits.u, false), V_APPLY_DIR(last_direction_bits.v, false), W_APPLY_DIR(last_direction_bits.w, false)
     );
-
-    last_direction_bits = axis_dir;
     
     DIR_WAIT_AFTER();
 
@@ -3470,12 +3473,11 @@ void Stepper::report_positions() {
 
     // Update step counts
     LOGICAL_AXIS_CODE(
-      if (axis_step.e) count_position.e += axis_dir.e ? 1 : -1,
-      if (axis_step.x) count_position.x += axis_dir.x ? 1 : -1, if (axis_step.y) count_position.y += axis_dir.y ? 1 : -1,
-      if (axis_step.z) count_position.z += axis_dir.z ? 1 : -1, if (axis_step.i) count_position.i += axis_dir.i ? 1 : -1,
-      if (axis_step.j) count_position.j += axis_dir.j ? 1 : -1, if (axis_step.k) count_position.k += axis_dir.k ? 1 : -1,
-      if (axis_step.u) count_position.u += axis_dir.u ? 1 : -1, if (axis_step.v) count_position.v += axis_dir.v ? 1 : -1,
-      if (axis_step.w) count_position.w += axis_dir.w ? 1 : -1
+      if (axis_step.e) count_position.e += last_direction_bits.e ? 1 : -1, if (axis_step.x) count_position.x += last_direction_bits.x ? 1 : -1,
+      if (axis_step.y) count_position.y += last_direction_bits.y ? 1 : -1, if (axis_step.z) count_position.z += last_direction_bits.z ? 1 : -1,
+      if (axis_step.i) count_position.i += last_direction_bits.i ? 1 : -1, if (axis_step.j) count_position.j += last_direction_bits.j ? 1 : -1,
+      if (axis_step.k) count_position.k += last_direction_bits.k ? 1 : -1, if (axis_step.u) count_position.u += last_direction_bits.u ? 1 : -1,
+      if (axis_step.v) count_position.v += last_direction_bits.v ? 1 : -1, if (axis_step.w) count_position.w += last_direction_bits.w ? 1 : -1
     );
 
     #if HAS_EXTRUDERS
