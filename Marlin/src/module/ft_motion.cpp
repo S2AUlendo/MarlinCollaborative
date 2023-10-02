@@ -189,7 +189,7 @@ void FxdTiCtrl::loop() {
 
     // Call Ulendo FBS here.
 
-    // Copy any uncompensated vectors.
+    // Copy the uncompensated vectors.
     #define TCOPY(A) memcpy(trajMod.A, traj.A, sizeof(trajMod.A))
     LOGICAL_AXIS_CODE(
       TCOPY(e),
@@ -198,8 +198,8 @@ void FxdTiCtrl::loop() {
       TCOPY(u), TCOPY(v), TCOPY(w)
     );
 
-    // Shift the time series back in the window.
-    #define TSHIFT(A) memcpy(traj.A, &traj.A[FTM_BATCH_SIZE], (FTM_WINDOW_SIZE - FTM_BATCH_SIZE) * sizeof(traj.A[0]))
+    // Shift the time series back in the window
+    #define TSHIFT(A) memcpy(traj.A, &traj.A[FTM_BATCH_SIZE], ((FTM_WINDOW_SIZE) - (FTM_BATCH_SIZE)) * sizeof(traj.A[0]))
     LOGICAL_AXIS_CODE(
       TSHIFT(e),
       TSHIFT(x), TSHIFT(y), TSHIFT(z),
@@ -212,7 +212,7 @@ void FxdTiCtrl::loop() {
 
     batchRdy = false; // Clear so that makeVector() may resume generating points.
 
-  } // if (batchRdy && !batchRdyForInterp)
+  }
 
   // Interpolation.
   while ( batchRdyForInterp

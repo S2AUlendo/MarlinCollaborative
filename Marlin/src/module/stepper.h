@@ -514,6 +514,11 @@ class Stepper {
     static void set_position(const xyze_long_t &spos);
     static void set_axis_position(const AxisEnum a, const int32_t &v);
 
+    // Set current position in steps when reset flag is set in M493 and planner already synchronized 
+    #if ENABLED(FT_MOTION)
+      static void set_ft_axis_position();
+    #endif
+
     // Report the positions of the steppers, in steps
     static void report_a_position(const xyz_long_t &pos);
     static void report_positions();
@@ -524,7 +529,7 @@ class Stepper {
         if (current_block->is_page()) page_manager.free_page(current_block->page_idx);
       #endif
       current_block = nullptr;
-      axis_did_move = 0;
+      axis_did_move.reset();
       planner.release_current_block();
       TERN_(LIN_ADVANCE, la_interval = nextAdvanceISR = LA_ADV_NEVER);
     }

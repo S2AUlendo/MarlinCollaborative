@@ -1486,6 +1486,9 @@ void Stepper::isr() {
 
   #if ENABLED(FT_MOTION)
     static uint32_t fxdTiCtrl_nextAuxISR = 0U;  // Storage for the next ISR of the auxilliary tasks.
+    const bool using_fxtictrl = fxdTiCtrl.cfg.mode;
+  #else
+    constexpr bool using_fxtictrl = false;
   #endif
 
   // We need this variable here to be able to use it in the following loop
@@ -1498,7 +1501,6 @@ void Stepper::isr() {
 
     #if ENABLED(FT_MOTION)
 
-      const bool using_fxtictrl = fxdTiCtrl.cfg.mode;
       if (using_fxtictrl) {
         if (!nextMainISR) {
           nextMainISR = FTM_MIN_TICKS;
@@ -1510,17 +1512,13 @@ void Stepper::isr() {
           fxdTiCtrl_refreshAxisDidMove();
           endstops.update();
           TERN_(BABYSTEPPING, if (babystep.has_steps()) babystepping_isr());
-          fxdTiCtrl_nextAuxISR = 0.0025f * (STEPPER_TIMER_RATE); // TODO: Aux task magic number
+          fxdTiCtrl_nextAuxISR = 0.0025f * (STEPPER_TIMER_RATE); // Aux task magic number
         }
 
         interval = _MIN(nextMainISR, fxdTiCtrl_nextAuxISR);
         nextMainISR -= interval;
         fxdTiCtrl_nextAuxISR -= interval;
       }
-
-    #else
-
-      constexpr bool using_fxtictrl = false;
 
     #endif
 
@@ -3282,6 +3280,30 @@ void Stepper::set_axis_position(const AxisEnum a, const int32_t &v) {
   #endif
 }
 
+#if ENABLED(FT_MOTION)
+  void Stepper::set_ft_axis_position() {
+    //planner.synchronize(); planner already synchronized in M493
+
+    #ifdef __AVR__
+      // Protect the access to the position. Only required for AVR, as
+      //  any 32bit CPU offers atomic access to 32bit variables
+      const bool was_enabled = suspend();
+    #endif
+
+    LOGICAL_AXIS_CODE( // Tell the world where we are
+        count_position[X_AXIS] = planner.position.x, count_position[Y_AXIS] = planner.position.y,
+        count_position[Z_AXIS] = planner.position.z, count_position[E_AXIS] = planner.position.e,
+        count_position[I_AXIS] = planner.position.i, count_position[J_AXIS] = planner.position.j,
+        count_position[K_AXIS] = planner.position.k, count_position[U_AXIS] = planner.position.u,
+        count_position[V_AXIS] = planner.position.v, count_position[W_AXIS] = planner.position.w);
+
+    #ifdef __AVR__
+      // Reenable Stepper ISR
+      if (was_enabled) wake_up();
+    #endif
+}
+#endif
+
 // Signal endstops were triggered - This function can be called from
 // an ISR context  (Temperature, Stepper or limits ISR), so we must
 // be very careful here. If the interrupt being preempted was the
@@ -3418,16 +3440,11 @@ void Stepper::report_positions() {
     // if (axis_step.w) { didMoveReport.w = true; }
 
     const xyze_bool_t axis_dir = LOGICAL_AXIS_ARRAY(
-      TEST(command, FT_BIT_STEP_E) ? TEST(command, FT_BIT_DIR_E) : last_direction_bits.e,
-      TEST(command, FT_BIT_STEP_X) ? TEST(command, FT_BIT_DIR_X) : last_direction_bits.x,
-      TEST(command, FT_BIT_STEP_Y) ? TEST(command, FT_BIT_DIR_Y) : last_direction_bits.y,
-      TEST(command, FT_BIT_STEP_Z) ? TEST(command, FT_BIT_DIR_Z) : last_direction_bits.z,
-      TEST(command, FT_BIT_STEP_I) ? TEST(command, FT_BIT_DIR_I) : last_direction_bits.i,
-      TEST(command, FT_BIT_STEP_J) ? TEST(command, FT_BIT_DIR_J) : last_direction_bits.j,
-      TEST(command, FT_BIT_STEP_K) ? TEST(command, FT_BIT_DIR_K) : last_direction_bits.k,
-      TEST(command, FT_BIT_STEP_U) ? TEST(command, FT_BIT_DIR_U) : last_direction_bits.u,
-      TEST(command, FT_BIT_STEP_V) ? TEST(command, FT_BIT_DIR_V) : last_direction_bits.v,
-      TEST(command, FT_BIT_STEP_W) ? TEST(command, FT_BIT_DIR_W) : last_direction_bits.w
+      axis_step.e ? TEST(command, FT_BIT_DIR_E) : last_direction_bits.e, axis_step.x ? TEST(command, FT_BIT_DIR_X) : last_direction_bits.x,
+      axis_step.y ? TEST(command, FT_BIT_DIR_Y) : last_direction_bits.y, axis_step.z ? TEST(command, FT_BIT_DIR_Z) : last_direction_bits.z,
+      axis_step.i ? TEST(command, FT_BIT_DIR_I) : last_direction_bits.i, axis_step.j ? TEST(command, FT_BIT_DIR_J) : last_direction_bits.j,
+      axis_step.k ? TEST(command, FT_BIT_DIR_K) : last_direction_bits.k, axis_step.u ? TEST(command, FT_BIT_DIR_U) : last_direction_bits.u,
+      axis_step.v ? TEST(command, FT_BIT_DIR_V) : last_direction_bits.v, axis_step.w ? TEST(command, FT_BIT_DIR_W) : last_direction_bits.w
     );
 
     // Apply directions (which will apply to the entire linear move)
@@ -3452,7 +3469,14 @@ void Stepper::report_positions() {
     START_TIMED_PULSE();
 
     // Update step counts
-    TERN_(HAS_Z_AXIS, if (axis_step.z) count_position.z += axis_dir.z ? 1 : -1;);
+    LOGICAL_AXIS_CODE(
+      if (axis_step.e) count_position.e += axis_dir.e ? 1 : -1,
+      if (axis_step.x) count_position.x += axis_dir.x ? 1 : -1, if (axis_step.y) count_position.y += axis_dir.y ? 1 : -1,
+      if (axis_step.z) count_position.z += axis_dir.z ? 1 : -1, if (axis_step.i) count_position.i += axis_dir.i ? 1 : -1,
+      if (axis_step.j) count_position.j += axis_dir.j ? 1 : -1, if (axis_step.k) count_position.k += axis_dir.k ? 1 : -1,
+      if (axis_step.u) count_position.u += axis_dir.u ? 1 : -1, if (axis_step.v) count_position.v += axis_dir.v ? 1 : -1,
+      if (axis_step.w) count_position.w += axis_dir.w ? 1 : -1
+    );
 
     #if HAS_EXTRUDERS
       #if ENABLED(E_DUAL_STEPPER_DRIVERS)
