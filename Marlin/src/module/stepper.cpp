@@ -3538,39 +3538,6 @@ void Stepper::report_positions() {
 
   } // Stepper::ftMotion_stepper
 
-  void Stepper::ftMotion_blockQueueUpdate() {
-
-    if (current_block) {
-      // If the current block is not done processing, return right away
-      if (!ftMotion.getBlockProcDn()) return;
-
-      axis_did_move.reset();
-      planner.release_current_block();
-    }
-
-    // Check the buffer for a new block
-    current_block = planner.get_current_block();
-
-    if (current_block) {
-      // Sync block? Sync the stepper counts and return
-      while (current_block->is_sync()) {
-        TERN_(LASER_FEATURE, if (!(current_block->is_fan_sync() || current_block->is_pwr_sync()))) _set_position(current_block->position);
-
-        planner.release_current_block();
-
-        // Try to get a new block
-        if (!(current_block = planner.get_current_block()))
-          return; // No queued blocks.
-      }
-
-      ftMotion.startBlockProc();
-      return;
-    }
-
-    ftMotion.runoutBlock();
-
-  } // Stepper::ftMotion_blockQueueUpdate()
-
 #endif // FT_MOTION
 
 #if ENABLED(BABYSTEPPING)
