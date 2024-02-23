@@ -152,10 +152,7 @@ class FTMotion {
     static uint32_t N1, N2, N3;
     static uint32_t max_intervals;
 
-    #define _DIVCEIL(A,B) (((A) + (B) - 1) / (B))
-    static constexpr uint32_t _ftm_ratio = TERN(FTM_UNIFIED_BWS, 2, _DIVCEIL(FTM_WINDOW_SIZE, FTM_BATCH_SIZE)),
-                              shaper_intervals = (FTM_BATCH_SIZE) * _DIVCEIL(FTM_ZMAX, FTM_BATCH_SIZE),
-                              min_max_intervals = (FTM_BATCH_SIZE) * _ftm_ratio;
+    static constexpr uint32_t prop_batches = CEIL(FTM_WINDOW_SIZE/FTM_BATCH_SIZE) - 1;
 
     // Make vector variables.
     static uint32_t makeVector_idx,

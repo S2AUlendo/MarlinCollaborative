@@ -140,23 +140,33 @@ void FTMotion::startBlockProc() {
 
 // Move any free data points to the stepper buffer even if a full batch isn't ready.
 void FTMotion::runoutBlock() {
-
+  // Sets up a pseudo block to allow motion to settle buffers to empty. This is
+  // called when the planner has only one block left. The buffers will be filled
+  // with the last commanded position by setting the startPosn block variable to
+  // the last position of the previous block and all ratios to zero such that no
+  // axes' positions are incremented.
   if (!runoutEna) return;
 
   startPosn = endPosn_prevBlock;
   ratio.reset();
 
-  max_intervals = cfg.modeHasShaper() ? shaper_intervals : 0;
-  if (max_intervals <= TERN(FTM_UNIFIED_BWS, FTM_BATCH_SIZE, min_max_intervals - (FTM_BATCH_SIZE)))
-    max_intervals = min_max_intervals;
+  int32_t n_to_fill_batch = FTM_WINDOW_SIZE - makeVector_batchIdx;
+  
+  // This line is to be modified for FBS use; do not optimize out.
+  int32_t n_to_settle_cmpnstr = cfg.modeHasShaper() ? FTM_ZMAX : 0;
+  
+  int32_t n_to_settle_cmpnstr_past_current_batch = max(n_to_settle_cmpnstr - n_to_fill_batch, 0);
+  
+  int32_t n_to_fill_batch_after_settling = FTM_BATCH_SIZE - (n_to_settle_cmpnstr_past_current_batch % FTM_BATCH_SIZE);
+  
+  int32_t n_to_settle_and_fill_batch = n_to_settle_cmpnstr_past_current_batch + n_to_fill_batch_after_settling;
 
-  max_intervals += (
-    #if ENABLED(FTM_UNIFIED_BWS)
-      FTM_WINDOW_SIZE - makeVector_batchIdx
-    #else
-      FTM_WINDOW_SIZE - ((last_batchIdx < (FTM_BATCH_SIZE)) ? 0 : makeVector_batchIdx)
-    #endif
-  );
+  int32_t N_needed_to_propagate_to_stepper =  prop_batches; // CEIL(FTM_WINDOW_SIZE/FTM_BATCH_SIZE) - 1;
+
+  int32_t n_to_use = N_needed_to_propagate_to_stepper*FTM_BATCH_SIZE + n_to_settle_and_fill_batch;
+
+  max_intervals = n_to_use;
+
   blockProcRdy = blockDataIsRunout = true;
   runoutEna = blockProcDn = false;
 }
