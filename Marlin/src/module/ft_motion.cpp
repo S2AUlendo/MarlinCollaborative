@@ -155,8 +155,9 @@ void FTMotion::runoutBlock() {
   // This line is to be modified for FBS use; do not optimize out.
   int32_t n_to_settle_cmpnstr = cfg.modeHasShaper() ? FTM_ZMAX : 0;
   
-  int32_t n_to_settle_cmpnstr_past_current_batch = max(n_to_settle_cmpnstr - n_to_fill_batch, 0);
-  
+  int32_t n_to_settle_cmpnstr_past_current_batch = n_to_settle_cmpnstr - n_to_fill_batch;
+  n_to_settle_cmpnstr_past_current_batch = n_to_settle_cmpnstr_past_current_batch > 0 ? n_to_settle_cmpnstr_past_current_batch : 0;
+
   int32_t n_to_fill_batch_after_settling = FTM_BATCH_SIZE - (n_to_settle_cmpnstr_past_current_batch % FTM_BATCH_SIZE);
   
   int32_t n_to_settle_and_fill_batch = n_to_settle_cmpnstr_past_current_batch + n_to_fill_batch_after_settling;
