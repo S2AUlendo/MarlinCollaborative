@@ -47,6 +47,7 @@ FTMotion ftMotion;
 // Public variables.
 
 ft_config_t FTMotion::cfg;
+ftMotionTrajGenConfig_t FTMotion::traj_gen_cfg;
 bool FTMotion::busy; // = false
 ft_command_t FTMotion::stepperCmdBuff[FTM_STEPPERCMD_BUFF_SIZE] = {0U}; // Stepper commands buffer.
 int32_t FTMotion::stepperCmdBuff_produceIdx = 0, // Index of next stepper command write to the buffer.
@@ -150,14 +151,14 @@ void FTMotion::loop() {
   }
 
 
-  if (blockProcRdy) {
+  if (blockProcRdy || traj_gen_cfg.mode) {
     
     if (!batchRdy) makeVector(); // Caution: Do not consolidate checks on blockProcRdy/batchRdy, as they are written by makeVector().
     // When makeVector is finished: either blockProcRdy has been set false (because the block is
     // done being processed) or batchRdy is set true, or both.
 
     // Check if the block has been completely converted:
-    if (!blockProcRdy) {
+    if (!blockProcRdy && !traj_gen_cfg.mode) {
       discard_planner_block_protected();
 
       // Check if the block needs to be runout:
@@ -210,7 +211,7 @@ void FTMotion::loop() {
   }
 
   // Report busy status to planner.
-  busy = (sts_stepperBusy || blockProcRdy || batchRdy || batchRdyForInterp);
+  busy = (sts_stepperBusy || blockProcRdy || batchRdy || batchRdyForInterp || traj_gen_cfg.mode);
 
 }
 
@@ -388,6 +389,14 @@ void FTMotion::reset() {
   TERN_(HAS_EXTRUDERS, e_raw_z1 = e_advanced_z1 = 0.0f);
 }
 
+
+void FTMotion::setup_traj_gen(uint32_t intervals) {
+  max_intervals = FTM_BATCH_SIZE*ceil(PROP_BATCHES+(float)(intervals)/FTM_BATCH_SIZE); // Extends batches to ensure runout.
+  reset();
+  busy = true;
+}
+
+
 // Private functions.
 
 
@@ -424,7 +433,7 @@ void FTMotion::runoutBlock() {
 
   int32_t n_to_settle_and_fill_batch = n_to_settle_cmpnstr + n_to_fill_batch_after_settling;
 
-  int32_t N_needed_to_propagate_to_stepper =  PROP_BATCHES;
+  int32_t N_needed_to_propagate_to_stepper = PROP_BATCHES;
 
   int32_t n_to_use = N_needed_to_propagate_to_stepper*FTM_BATCH_SIZE + n_to_settle_and_fill_batch;
 
@@ -552,52 +561,88 @@ void FTMotion::loadBlockData(block_t * const current_block) {
 // Generate data points of the trajectory.
 void FTMotion::makeVector() {
   do {
-    float accel_k = 0.0f;                                 // (mm/s^2) Acceleration K factor
-    float tau = (makeVector_idx + 1) * (FTM_TS);          // (s) Time since start of block
-    float dist = 0.0f;                                    // (mm) Distance traveled
+    if (traj_gen_cfg.mode == trajGenMode_SWEEPC_X || traj_gen_cfg.mode == trajGenMode_SWEEPC_Y) {
+      float s_ = 0.0f;
 
-    if (makeVector_idx < N1) {
-      // Acceleration phase
-      dist = (f_s * tau) + (0.5f * accel_P * sq(tau));    // (mm) Distance traveled for acceleration phase since start of block
-      accel_k = accel_P;                                  // (mm/s^2) Acceleration K factor from Accel phase
-    }
-    else if (makeVector_idx < (N1 + N2)) {
-      // Coasting phase
-      dist = s_1e + F_P * (tau - N1 * (FTM_TS));          // (mm) Distance traveled for coasting phase since start of block
-      //accel_k = 0.0f;
-    }
-    else {
-      // Deceleration phase
-      tau -= (N1 + N2) * (FTM_TS);                        // (s) Time since start of decel phase
-      dist = s_2e + F_P * tau + 0.5f * decel_P * sq(tau); // (mm) Distance traveled for deceleration phase since start of block
-      accel_k = decel_P;                                  // (mm/s^2) Acceleration K factor from Decel phase
-    }
+      const float tau = makeVector_idx * FTM_TS;
 
-    LOGICAL_AXIS_CODE(
-      traj.e[makeVector_batchIdx] = startPosn.e + ratio.e * dist,
-      traj.x[makeVector_batchIdx] = startPosn.x + ratio.x * dist,
-      traj.y[makeVector_batchIdx] = startPosn.y + ratio.y * dist,
-      traj.z[makeVector_batchIdx] = startPosn.z + ratio.z * dist,
-      traj.i[makeVector_batchIdx] = startPosn.i + ratio.i * dist,
-      traj.j[makeVector_batchIdx] = startPosn.j + ratio.j * dist,
-      traj.k[makeVector_batchIdx] = startPosn.k + ratio.k * dist,
-      traj.u[makeVector_batchIdx] = startPosn.u + ratio.u * dist,
-      traj.v[makeVector_batchIdx] = startPosn.v + ratio.v * dist,
-      traj.w[makeVector_batchIdx] = startPosn.w + ratio.w * dist
-    );
-
-    #if HAS_EXTRUDERS
-      if (cfg.linearAdvEna) {
-        float dedt_adj = (traj.e[makeVector_batchIdx] - e_raw_z1) * (FTM_FS);
-        if (ratio.e > 0.0f) dedt_adj += accel_k * cfg.linearAdvK;
-
-        e_raw_z1 = traj.e[makeVector_batchIdx];
-        e_advanced_z1 += dedt_adj * (FTM_TS);
-        traj.e[makeVector_batchIdx] = e_advanced_z1;
+      if ( tau <= traj_gen_cfg.pcws_ti[0] ){ s_ = 0.f; }
+      
+      else if ( tau <= traj_gen_cfg.pcws_ti[1] ){
+        const float tau_ = tau - traj_gen_cfg.pcws_ti[0];
+        if (tau_ < traj_gen_cfg.step_ti){ s_ = traj_gen_cfg.step_a_x_0p5 * sq(tau_); }
+        else if (tau_ < traj_gen_cfg.step_ti_x_3){ const float k_ = tau_ - traj_gen_cfg.step_ti_x_2; s_ = traj_gen_cfg.step_a_x_step_ti_x_step_ti - traj_gen_cfg.step_a_x_0p5 * sq(k_); }
+        else { const float k_ = tau_ - traj_gen_cfg.step_ti_x_4; s_ = traj_gen_cfg.step_a_x_0p5 * sq(k_); }
       }
-    #endif
+      else if ( tau <= traj_gen_cfg.pcws_ti[2] ){ s_ = 0.0f; }
+      
+      else if ( tau <= traj_gen_cfg.pcws_ti[3] ){
+        const float tau_ = tau - traj_gen_cfg.pcws_ti[2];
+        const float tau_tau_ = sq(tau_);
+        const float tau_tau_tau_ = tau_ * tau_tau_;
+        const float k_ = 1.f / (2.f*traj_gen_cfg.k1*tau_ + traj_gen_cfg.k2);
+        const float A_ = ((tau_tau_tau_ < 1.f) ? tau_tau_tau_ : 1.f) * traj_gen_cfg.a * sq(k_);
+        s_ = A_ * sin( traj_gen_cfg.k1*tau_tau_ + traj_gen_cfg.k2*tau_ );
+      }
+      else if ( tau <= traj_gen_cfg.pcws_ti[4] ){ s_ = 0.f; }
 
-    // Update shaping parameters if needed.
+      else if ( tau <= traj_gen_cfg.pcws_ti[5] ){
+        const float tau_ = tau - traj_gen_cfg.pcws_ti[4];
+        if (tau_ < traj_gen_cfg.step_ti){ s_ = -traj_gen_cfg.step_a_x_0p5 * sq(tau_); }
+        else if (tau_ < traj_gen_cfg.step_ti_x_3){ const float k_ = tau_ - traj_gen_cfg.step_ti_x_2; s_ = -traj_gen_cfg.step_a_x_step_ti_x_step_ti + traj_gen_cfg.step_a_x_0p5 * sq(k_); }
+        else { const float k_ = tau_ - traj_gen_cfg.step_ti_x_4; s_ = -traj_gen_cfg.step_a_x_0p5 * sq(k_); }
+      }
+      else { s_ = 0.f; }
+
+      if (traj_gen_cfg.mode == trajGenMode_SWEEPC_X ) traj.x[makeVector_batchIdx] = s_;
+      else traj.y[makeVector_batchIdx] = s_;
+
+    } else { // Planner mode.
+      float accel_k = 0.0f;                                 // (mm/s^2) Acceleration K factor
+      float tau = (makeVector_idx + 1) * (FTM_TS);    // (s) Time since start of block
+      float dist = 0.0f;                                    // (mm) Distance traveled
+
+      if (makeVector_idx < N1) {
+        // Acceleration phase
+        dist = (f_s * tau) + (0.5f * accel_P * sq(tau));    // (mm) Distance traveled for acceleration phase since start of block
+        accel_k = accel_P;                                  // (mm/s^2) Acceleration K factor from Accel phase
+      }
+      else if (makeVector_idx < (N1 + N2)) {
+        // Coasting phase
+        dist = s_1e + F_P * (tau - N1 * (FTM_TS));          // (mm) Distance traveled for coasting phase since start of block
+        //accel_k = 0.0f;
+      }
+      else {
+        // Deceleration phase
+        tau -= (N1 + N2) * (FTM_TS);                        // (s) Time since start of decel phase
+        dist = s_2e + F_P * tau + 0.5f * decel_P * sq(tau); // (mm) Distance traveled for deceleration phase since start of block
+        accel_k = decel_P;                                  // (mm/s^2) Acceleration K factor from Decel phase
+      }
+
+      LOGICAL_AXIS_CODE(
+        traj.e[makeVector_batchIdx] = startPosn.e + ratio.e * dist,
+        traj.x[makeVector_batchIdx] = startPosn.x + ratio.x * dist,
+        traj.y[makeVector_batchIdx] = startPosn.y + ratio.y * dist,
+        traj.z[makeVector_batchIdx] = startPosn.z + ratio.z * dist,
+        traj.i[makeVector_batchIdx] = startPosn.i + ratio.i * dist,
+        traj.j[makeVector_batchIdx] = startPosn.j + ratio.j * dist,
+        traj.k[makeVector_batchIdx] = startPosn.k + ratio.k * dist,
+        traj.u[makeVector_batchIdx] = startPosn.u + ratio.u * dist,
+        traj.v[makeVector_batchIdx] = startPosn.v + ratio.v * dist,
+        traj.w[makeVector_batchIdx] = startPosn.w + ratio.w * dist
+      );
+
+      #if HAS_EXTRUDERS
+        if (cfg.linearAdvEna) {
+          float dedt_adj = (traj.e[makeVector_batchIdx] - e_raw_z1) * (FTM_FS);
+          if (ratio.e > 0.0f) dedt_adj += accel_k * cfg.linearAdvK;
+
+          e_raw_z1 = traj.e[makeVector_batchIdx];
+          e_advanced_z1 += dedt_adj * (FTM_TS);
+          traj.e[makeVector_batchIdx] = e_advanced_z1;
+        }
+      #endif
+    }
 
     // Apply shaping.
     #if HAS_X_AXIS
@@ -630,7 +675,7 @@ void FTMotion::makeVector() {
     }
 
     if (++makeVector_idx == max_intervals) {
-      blockProcRdy = false;
+      blockProcRdy = false; traj_gen_cfg.mode = trajGenMode_NONE;
       makeVector_idx = 0;
     }
   } while (blockProcRdy && !batchRdy);

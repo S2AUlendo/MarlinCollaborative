@@ -53,6 +53,7 @@ class FTMotion {
 
     // Public variables
     static ft_config_t cfg;
+    static ftMotionTrajGenConfig_t traj_gen_cfg;
     static bool busy;
 
     static void set_defaults() {
@@ -99,6 +100,8 @@ class FTMotion {
 
     static void reset();                                  // Reset all states of the fixed time conversion to defaults.
 
+    static void setup_traj_gen(uint32_t intervals);
+
   private:
 
     static xyze_trajectory_t traj;
@@ -124,12 +127,10 @@ class FTMotion {
 
     // Make vector variables.
     static uint32_t makeVector_idx,
-                    makeVector_idx_z1,
                     makeVector_batchIdx;
 
     // Interpolation variables.
-    static uint32_t interpIdx,
-                    interpIdx_z1;
+    static uint32_t interpIdx;
 
     static xyze_long_t steps;
 
