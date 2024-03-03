@@ -223,7 +223,7 @@ void FTMotion::loop() {
     const float K = exp(-zeta * M_PI / sqrt(1.f - sq(zeta))),
                 K2 = sq(K);
 
-    switch (cfg.mode) {
+    switch (shaper) {
 
       case ftMotionCmpnstr_ZV:
         max_i = 1U;
