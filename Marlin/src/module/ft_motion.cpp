@@ -405,6 +405,7 @@ void FTMotion::discard_planner_block_protected() {
                                 // be null when the "block" is a runout or generated) in order
                                 // to use planner.release_current_block(). 
     stepper.current_block = nullptr;
+    stepper.axis_did_move.reset();
     planner.release_current_block();  // FTM uses release_current_block() instead of discard_current_block(),
                                       // as in block_phase_isr(). This change is to avoid invoking axis_did_move.reset().
                                       // current_block = nullptr is added to replicate discard without axis_did_move reset.
