@@ -140,12 +140,10 @@ void GcodeSuite::M493_report(const bool forReplay/*=true*/) {
  *    K<gain> Set Linear Advance gain
  *
  *    A<Hz>   Set static/base frequency for the X axis
- *    F<Hz>   Set frequency scaling for the X axis
  *    I 0.0   Set damping ratio for the X axis
  *    Q 0.00  Set the vibration tolerance for the X axis
  *
  *    B<Hz> Set static/base frequency for the Y axis
- *    H<Hz> Set frequency scaling for the Y axis
  *    J 0.0   Set damping ratio for the Y axis
  *    R 0.00  Set the vibration tolerance for the Y axis
  */

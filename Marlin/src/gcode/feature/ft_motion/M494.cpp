@@ -53,22 +53,22 @@ void say_ftm_cfg() {
 /**
  * M494: Interact with Fixed-time Motion Control's trajectory generation.
  *
- *    F<mode> Start / abort a frequency sweep profile.
+ *    A<mode> Start / abort a frequency sweep profile.
  *
  *       0: None active.
  *       1: Continuous sweep on X axis.
  *       2: Continuous sweep on Y axis.
  *       3: Abort the current sweep.
  * 
- *    S<float> Start frequency.
- *    E<float> End frequency.
+ *    B<float> Start frequency.
+ *    C<float> End frequency.
  *    D<float> Frequency rate.
- *    A<float> Acceleration amplitude.
- *    I<float> Step time.
- *    J<float> Step acceleration amplitude.
- *    K<float> Delay time to opening step.
- *    L<float> Delay time from opening step to sweep.
- *    M<float> Delay time from sweep to closing step.
+ *    E<float> Acceleration amplitude.
+ *    F<float> Step time.
+ *    H<float> Step acceleration amplitude.
+ *    I<float> Delay time to opening step.
+ *    J<float> Delay time from opening step to sweep.
+ *    K<float> Delay time from sweep to closing step.
  * 
  * With no parameters passed, M494 will report the FTM configuration and
  * variables required for autocalibration.
@@ -84,7 +84,7 @@ void GcodeSuite::M494() {
   bool good_cfg_received = true;
 
   // Parse mode parameter.
-  if (parser.seenval('F')) {
+  if (parser.seenval('A')) {
     const ftMotionTrajGenMode_t newmm = (ftMotionTrajGenMode_t)parser.value_byte();
     switch (newmm) {
       default: SERIAL_ECHOLNPGM("?Invalid calibration mode [F] value."); return;
@@ -109,14 +109,14 @@ void GcodeSuite::M494() {
   }
 
   // Parse start frequency parameter.
-  if (parser.seenval('S')) {
+  if (parser.seenval('B')) {
       const float val = parser.value_float();
       if (val >= 0.0f) ftMotion.traj_gen_cfg.f0 = val;
       else { good_cfg_received = false; SERIAL_ECHOLN("M494 echo: Start frequency out of range."); }
   } else good_cfg_received = false;
 
   // Parse end frequency parameter.
-  if (parser.seenval('E')) {
+  if (parser.seenval('C')) {
       const float val = parser.value_float();
       if (val > 0.0f) ftMotion.traj_gen_cfg.f1 = val;
       else { good_cfg_received = false; SERIAL_ECHOLN("M494 echo: End frequency out of range."); }
@@ -130,42 +130,42 @@ void GcodeSuite::M494() {
   } else good_cfg_received = false;
 
   // Parse amplitude parameter.
-  if (parser.seenval('A')) {
+  if (parser.seenval('E')) {
       const float val = parser.value_float();
       if (val > 0.0f) ftMotion.traj_gen_cfg.a = val;
       else { good_cfg_received = false; SERIAL_ECHOLN("M494 echo: Amplitude out of range."); }
   } else good_cfg_received = false;
 
   // Parse step time parameter.
-  if (parser.seenval('I')) {
+  if (parser.seenval('F')) {
       const float val = parser.value_float();
       if (val > 0.0f) ftMotion.traj_gen_cfg.step_ti = val;
       else { good_cfg_received = false; SERIAL_ECHOLN("M494 echo: Step time out of range."); }
   } else good_cfg_received = false;
 
   // Parse step amplitude parameter.
-  if (parser.seenval('J')) {
+  if (parser.seenval('H')) {
       const float val = parser.value_float();
       if (val > 0.0f) ftMotion.traj_gen_cfg.step_a = val;
       else { good_cfg_received = false; SERIAL_ECHOLN("M494 echo: Step amplitude out of range."); }
   } else good_cfg_received = false;
 
   // Parse delay parameter.
-  if (parser.seenval('K')) {
+  if (parser.seenval('I')) {
       const float val = parser.value_float();
       if (val > 0.0f) ftMotion.traj_gen_cfg.dly1_ti = val;
       else { good_cfg_received = false; SERIAL_ECHOLN("M494 echo: Delay 1 out of range."); }
   } else good_cfg_received = false;
 
   // Parse delay parameter.
-  if (parser.seenval('L')) {
+  if (parser.seenval('J')) {
       const float val = parser.value_float();
       if (val > 0.0f) ftMotion.traj_gen_cfg.dly2_ti = val;
       else { good_cfg_received = false; SERIAL_ECHOLN("M494 echo: Delay 2 out of range."); }
   } else good_cfg_received = false;
 
   // Parse delay parameter.
-  if (parser.seenval('M')) {
+  if (parser.seenval('K')) {
       const float val = parser.value_float();
       if (val > 0.0f) ftMotion.traj_gen_cfg.dly3_ti = val;
       else { good_cfg_received = false; SERIAL_ECHOLN("M494 echo: Delay 3 out of range."); }
