@@ -196,8 +196,6 @@ void GcodeSuite::M494() {
     ftMotion.traj_gen_cfg.step_ti_x_3 = 3. * ftMotion.traj_gen_cfg.step_ti;
     ftMotion.traj_gen_cfg.step_ti_x_4 = 4. * ftMotion.traj_gen_cfg.step_ti;
 
-    const uint32_t profile_samples = round(ftMotion.traj_gen_cfg.pcws_ti[5]*FTM_FS + 0.5);
-
     ftMotion.traj_gen_cfg.mode = mode_val_seen;
 
     ftMotion.setup_traj_gen(round(ftMotion.traj_gen_cfg.pcws_ti[5]*FTM_FS + 0.5));
