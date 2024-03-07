@@ -3,6 +3,11 @@
  * Copyright (c) 2023 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
  *
  * Based on Sprinter and grbl.
+ /**
+ * Marlin 3D Printer Firmware
+ * Copyright (c) 2023 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+ *
+ * Based on Sprinter and grbl.
  * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
  *
  * This program is free software: you can redistribute it and/or modify
@@ -59,7 +64,7 @@ void say_ftm_cfg() {
  *       1: Continuous sweep on X axis.
  *       2: Continuous sweep on Y axis.
  *       3: Abort the current sweep.
- * 
+ *
  *    B<float> Start frequency.
  *    C<float> End frequency.
  *    D<float> Frequency rate.
@@ -69,13 +74,13 @@ void say_ftm_cfg() {
  *    I<float> Delay time to opening step.
  *    J<float> Delay time from opening step to sweep.
  *    K<float> Delay time from sweep to closing step.
- * 
+ *
  * With no parameters passed, M494 will report the FTM configuration and
  * variables required for autocalibration.
- * 
+ *
  */
 void GcodeSuite::M494() {
-  
+
   if (!parser.seen_any()) { say_ftm_cfg(); return; }
 
   if (!ftMotion.cfg.mode) { SERIAL_ECHOLN("M494 echo: rejected! FTM is not enabled."); return; }
@@ -178,9 +183,9 @@ void GcodeSuite::M494() {
 
     const float f0_ = ftMotion.traj_gen_cfg.f0 - ftMotion.traj_gen_cfg.dfdt; // This is calculated assuming a ramp time of 1 sec.
 
-    ftMotion.traj_gen_cfg.k1 = M_PI*ftMotion.traj_gen_cfg.dfdt;
-    ftMotion.traj_gen_cfg.k2 = 2.*M_PI*f0_;
-    
+    ftMotion.traj_gen_cfg.k1 = PI*ftMotion.traj_gen_cfg.dfdt;
+    ftMotion.traj_gen_cfg.k2 = 2.*PI*f0_;
+
     ftMotion.traj_gen_cfg.t1 = ( ftMotion.traj_gen_cfg.f1 - f0_ ) / ftMotion.traj_gen_cfg.dfdt;
 
     ftMotion.traj_gen_cfg.pcws_ti[0] = ftMotion.traj_gen_cfg.dly1_ti;
@@ -195,8 +200,6 @@ void GcodeSuite::M494() {
     ftMotion.traj_gen_cfg.step_ti_x_2 = 2. * ftMotion.traj_gen_cfg.step_ti;
     ftMotion.traj_gen_cfg.step_ti_x_3 = 3. * ftMotion.traj_gen_cfg.step_ti;
     ftMotion.traj_gen_cfg.step_ti_x_4 = 4. * ftMotion.traj_gen_cfg.step_ti;
-
-    const uint32_t profile_samples = round(ftMotion.traj_gen_cfg.pcws_ti[5]*FTM_FS + 0.5);
 
     ftMotion.traj_gen_cfg.mode = mode_val_seen;
 

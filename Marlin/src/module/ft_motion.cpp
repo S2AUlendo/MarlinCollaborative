@@ -375,7 +375,7 @@ void FTMotion::reset() {
   endPosn_prevBlock.reset();
 
   makeVector_idx = 0;
-  makeVector_batchIdx = BATCH_SIDX_IN_WINDOW;
+  makeVector_batchIdx = TERN(FTM_UNIFIED_BWS, 0, _MIN(BATCH_SIDX_IN_WINDOW, FTM_BATCH_SIZE));
 
   steps.reset();
   interpIdx = 0;
