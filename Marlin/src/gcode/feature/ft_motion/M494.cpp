@@ -34,10 +34,10 @@ void say_ftm_cfg() {
     SERIAL_ECHOPGM( "M494 FTMCFG FTM_BATCH_SIZE:", (int)(FTM_BW_SIZE),
                     " FTM_WINDOW_SIZE:", (int)(FTM_BW_SIZE));
   #else
-    SERIAL_ECHOPGM( "M494 FTMCFG FTM_BATCH_SIZE:", (int)(FTM_WINDOW_SIZE),
-                    " FTM_WINDOW_SIZE:", (int)(FTM_BATCH_SIZE));
+    SERIAL_ECHOPGM( "M494 FTMCFG FTM_BATCH_SIZE:", (int)(FTM_BATCH_SIZE),
+                    " FTM_WINDOW_SIZE:", (int)(FTM_WINDOW_SIZE));
   #endif
-  SERIAL_ECHOPGM( " FTM_FS:", (int)(FTM_WINDOW_SIZE),
+  SERIAL_ECHOPGM( " FTM_FS:", (int)(FTM_FS),
                   " FTM_STEPPER_FS:", (int)(FTM_STEPPER_FS),
                   " FTM_STEPPERCMD_BUFF_SIZE:", (int)(FTM_STEPPERCMD_BUFF_SIZE),
                   " STEPPER_TIMER_RATE:", (int)(STEPPER_TIMER_RATE),
@@ -111,7 +111,7 @@ void GcodeSuite::M494() {
   // Parse start frequency parameter.
   if (parser.seenval('B')) {
       const float val = parser.value_float();
-      if (val >= 0.0f) ftMotion.traj_gen_cfg.f0 = val;
+      if (val >= 1.0f) ftMotion.traj_gen_cfg.f0 = val;
       else { good_cfg_received = false; SERIAL_ECHOLN("M494 echo: Start frequency out of range."); }
   } else good_cfg_received = false;
 
@@ -176,29 +176,27 @@ void GcodeSuite::M494() {
 
     planner.synchronize();
 
-    const float f0_ = ftMotion.traj_gen_cfg.f0 - ftMotion.traj_gen_cfg.dfdt; // This is calculated assuming a ramp time of 1 sec.
+    const float f0_ = ftMotion.traj_gen_cfg.f0 - 1.f; // This is calculated assuming a ramp time of 1 sec.
 
     ftMotion.traj_gen_cfg.k1 = PI*ftMotion.traj_gen_cfg.dfdt;
-    ftMotion.traj_gen_cfg.k2 = 2.*PI*f0_;
-    
-    ftMotion.traj_gen_cfg.t1 = ( ftMotion.traj_gen_cfg.f1 - f0_ ) / ftMotion.traj_gen_cfg.dfdt;
+    ftMotion.traj_gen_cfg.k2 = 2.f*PI*f0_;
 
     ftMotion.traj_gen_cfg.pcws_ti[0] = ftMotion.traj_gen_cfg.dly1_ti;
-    ftMotion.traj_gen_cfg.pcws_ti[1] = (ftMotion.traj_gen_cfg.dly1_ti + 4 * ftMotion.traj_gen_cfg.step_ti);
-    ftMotion.traj_gen_cfg.pcws_ti[2] = (ftMotion.traj_gen_cfg.dly1_ti + 4 * ftMotion.traj_gen_cfg.step_ti + ftMotion.traj_gen_cfg.dly2_ti);
-    ftMotion.traj_gen_cfg.pcws_ti[3] = (ftMotion.traj_gen_cfg.dly1_ti + 4 * ftMotion.traj_gen_cfg.step_ti + ftMotion.traj_gen_cfg.dly2_ti) + ftMotion.traj_gen_cfg.t1;
-    ftMotion.traj_gen_cfg.pcws_ti[4] = (ftMotion.traj_gen_cfg.dly1_ti + 4 * ftMotion.traj_gen_cfg.step_ti + ftMotion.traj_gen_cfg.dly2_ti + ftMotion.traj_gen_cfg.dly3_ti) + ftMotion.traj_gen_cfg.t1;
-    ftMotion.traj_gen_cfg.pcws_ti[5] = (ftMotion.traj_gen_cfg.dly1_ti + 8 * ftMotion.traj_gen_cfg.step_ti + ftMotion.traj_gen_cfg.dly2_ti + ftMotion.traj_gen_cfg.dly3_ti) + ftMotion.traj_gen_cfg.t1;
+    ftMotion.traj_gen_cfg.pcws_ti[1] = ftMotion.traj_gen_cfg.pcws_ti[0] + 4 * ftMotion.traj_gen_cfg.step_ti;
+    ftMotion.traj_gen_cfg.pcws_ti[2] = ftMotion.traj_gen_cfg.pcws_ti[1] + ftMotion.traj_gen_cfg.dly2_ti;
+    ftMotion.traj_gen_cfg.pcws_ti[3] = ftMotion.traj_gen_cfg.pcws_ti[2] + ( ftMotion.traj_gen_cfg.f1 - f0_ ) / ftMotion.traj_gen_cfg.dfdt;
+    ftMotion.traj_gen_cfg.pcws_ti[4] = ftMotion.traj_gen_cfg.pcws_ti[3] + ftMotion.traj_gen_cfg.dly3_ti;
+    ftMotion.traj_gen_cfg.pcws_ti[5] = ftMotion.traj_gen_cfg.pcws_ti[4] + 4 * ftMotion.traj_gen_cfg.step_ti;
 
-    ftMotion.traj_gen_cfg.step_a_x_0p5 = 0.5 * ftMotion.traj_gen_cfg.step_a;
+    ftMotion.traj_gen_cfg.step_a_x_0p5 = 0.5f * ftMotion.traj_gen_cfg.step_a;
     ftMotion.traj_gen_cfg.step_a_x_step_ti_x_step_ti = ftMotion.traj_gen_cfg.step_a * sq(ftMotion.traj_gen_cfg.step_ti);
-    ftMotion.traj_gen_cfg.step_ti_x_2 = 2. * ftMotion.traj_gen_cfg.step_ti;
-    ftMotion.traj_gen_cfg.step_ti_x_3 = 3. * ftMotion.traj_gen_cfg.step_ti;
-    ftMotion.traj_gen_cfg.step_ti_x_4 = 4. * ftMotion.traj_gen_cfg.step_ti;
+    ftMotion.traj_gen_cfg.step_ti_x_2 = 2.f * ftMotion.traj_gen_cfg.step_ti;
+    ftMotion.traj_gen_cfg.step_ti_x_3 = 3.f * ftMotion.traj_gen_cfg.step_ti;
+    ftMotion.traj_gen_cfg.step_ti_x_4 = 4.f * ftMotion.traj_gen_cfg.step_ti;
 
     ftMotion.traj_gen_cfg.mode = mode_val_seen;
 
-    ftMotion.setup_traj_gen(round(ftMotion.traj_gen_cfg.pcws_ti[5]*FTM_FS + 0.5));
+    ftMotion.setup_traj_gen(round(ftMotion.traj_gen_cfg.pcws_ti[5]*FTM_FS + 0.5f));
 
     SERIAL_ECHOLN("M494 echo: SWEEPC starting.");
 
@@ -208,7 +206,8 @@ void GcodeSuite::M494() {
 
     SERIAL_ECHOLN("M494 profile done.");
 
-    stepper.disable_all_steppers();
+    // stepper.disable_all_steppers(); Leave this to the plugin or user; this can
+    // be annoying on printers that require all axes homing before axis movement.
   }
 
 }

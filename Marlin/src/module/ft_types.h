@@ -56,7 +56,6 @@ typedef struct FXDTICtrlTrajGenConfig {
         pcws_ti[6] = {0.0f},
         k1 = 0.0f,
         k2 = 0.0f,
-        t1 = 0.0f,
         step_ti = 0.0f,
         step_a = 0.0f,
         dly1_ti = 0.0f,

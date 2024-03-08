@@ -678,7 +678,7 @@ void FTMotion::makeVector() {
       blockProcRdy = false; traj_gen_cfg.mode = trajGenMode_NONE;
       makeVector_idx = 0;
     }
-  } while (blockProcRdy && !batchRdy);
+  } while ((blockProcRdy || traj_gen_cfg.mode) && !batchRdy);
 }
 
 /**

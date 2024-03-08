@@ -126,6 +126,7 @@ void GcodeSuite::M493_report(const bool forReplay/*=true*/) {
  * 
  *    X/Y<compensator mode> Set the vibration compensator [input shaper] mode of the X and
  *                          Y axes respectively. Requires an X axis, at the minimum.
+ *      0: None
  *      1: ZV    : Zero Vibration
  *      2: ZVD   : Zero Vibration and Derivative
  *      3: ZVDD  : Zero Vibration, Derivative, and Double Derivative
@@ -181,6 +182,8 @@ void GcodeSuite::M493() {
           case ftMotionCmpnstr_NONE:
           case ftMotionCmpnstr_ZV:
           case ftMotionCmpnstr_ZVD:
+          case ftMotionCmpnstr_ZVDD:
+          case ftMotionCmpnstr_ZVDDD:
           case ftMotionCmpnstr_EI:
           case ftMotionCmpnstr_2HEI:
           case ftMotionCmpnstr_3HEI:
@@ -204,6 +207,8 @@ void GcodeSuite::M493() {
             case ftMotionCmpnstr_NONE:
             case ftMotionCmpnstr_ZV:
             case ftMotionCmpnstr_ZVD:
+            case ftMotionCmpnstr_ZVDD:
+            case ftMotionCmpnstr_ZVDDD:
             case ftMotionCmpnstr_EI:
             case ftMotionCmpnstr_2HEI:
             case ftMotionCmpnstr_3HEI:
