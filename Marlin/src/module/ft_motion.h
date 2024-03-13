@@ -89,6 +89,9 @@ class FTMotion {
 
     static bool sts_stepperBusy;                          // The stepper buffer has items and is in use.
 
+    static millis_t axis_pos_move_end_ti[NUM_AXIS_ENUMS],
+                    axis_neg_move_end_ti[NUM_AXIS_ENUMS];
+
     // Public methods
     static void init();
     static void loop();                                   // Controller main, to be invoked from non-isr task.
@@ -101,6 +104,9 @@ class FTMotion {
     static void reset();                                  // Reset all states of the fixed time conversion to defaults.
 
     static void setup_traj_gen(uint32_t intervals);
+
+    static bool axis_moving_pos(const AxisEnum axis) { return !ELAPSED(millis(), axis_pos_move_end_ti[axis]); }
+    static bool axis_moving_neg(const AxisEnum axis) { return !ELAPSED(millis(), axis_neg_move_end_ti[axis]); }
 
   private:
 
@@ -174,6 +180,9 @@ class FTMotion {
     static void loadBlockData(block_t *const current_block);
     static void makeVector();
     static void convertToSteps(const uint32_t idx);
+
+    FORCE_INLINE static int32_t num_samples_cmpnstr_settle() { return ( shaping.x.ena || shaping.y.ena ) ? FTM_ZMAX : 0; }
+
 
 }; // class FTMotion
 
