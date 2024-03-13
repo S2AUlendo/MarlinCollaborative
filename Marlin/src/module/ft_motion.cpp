@@ -749,6 +749,7 @@ void FTMotion::makeVector() {
     }
 
     if (++makeVector_idx == max_intervals) {
+      if (traj_gen_cfg.mode) SERIAL_ECHOLN("M494 echo: profile ran to completion.");
       blockProcRdy = false; traj_gen_cfg.mode = trajGenMode_NONE;
       makeVector_idx = 0;
     }

@@ -58,7 +58,7 @@ void say_ftm_cfg() {
  *       0: None active.
  *       1: Continuous sweep on X axis.
  *       2: Continuous sweep on Y axis.
- *       3: Abort the current sweep.
+ *       99: Abort the current sweep.
  * 
  *    B<float> Start frequency.
  *    C<float> End frequency.
@@ -201,10 +201,6 @@ void GcodeSuite::M494() {
     SERIAL_ECHOLN("M494 echo: SWEEPC starting.");
 
     stepper.enable_all_steppers();
-
-    planner.synchronize();
-
-    SERIAL_ECHOLN("M494 profile done.");
 
     // stepper.disable_all_steppers(); Leave this to the plugin or user; this can
     // be annoying on printers that require all axes homing before axis movement.
