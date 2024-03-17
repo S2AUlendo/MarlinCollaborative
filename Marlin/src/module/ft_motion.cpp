@@ -428,7 +428,9 @@ void FTMotion::reset() {
 
 
 void FTMotion::setup_traj_gen(uint32_t intervals) {
-  max_intervals = FTM_BATCH_SIZE*ceil(PROP_BATCHES+(float)(intervals)/FTM_BATCH_SIZE); // Extends batches to ensure runout.
+  // Extend the intervals by propagation time and some margin to 
+  // ensure motion is complete when completion message is sent.
+  max_intervals = FTM_BATCH_SIZE*(PROP_BATCHES+ceil(((float)(intervals)+FTM_FS*(0.5f+(float)(FTM_STEPPERCMD_BUFF_SIZE)/float(FTM_STEPPER_FS)))/FTM_BATCH_SIZE));
   reset();
   busy = true;
 }
