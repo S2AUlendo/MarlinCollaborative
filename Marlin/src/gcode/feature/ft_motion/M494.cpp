@@ -178,8 +178,8 @@ void GcodeSuite::M494() {
 
     const float f0_ = ftMotion.traj_gen_cfg.f0 - 1.f; // This is calculated assuming a ramp time of 1 sec.
 
-    ftMotion.traj_gen_cfg.k1 = PI*ftMotion.traj_gen_cfg.dfdt;
-    ftMotion.traj_gen_cfg.k2 = 2.f*PI*f0_;
+    ftMotion.traj_gen_cfg.k1 = M_PI*ftMotion.traj_gen_cfg.dfdt;
+    ftMotion.traj_gen_cfg.k2 = 2.f*M_PI*f0_;
 
     ftMotion.traj_gen_cfg.pcws_ti[0] = ftMotion.traj_gen_cfg.dly1_ti;
     ftMotion.traj_gen_cfg.pcws_ti[1] = ftMotion.traj_gen_cfg.pcws_ti[0] + 4 * ftMotion.traj_gen_cfg.step_ti;
